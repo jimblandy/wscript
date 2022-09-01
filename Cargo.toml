@@ -1,0 +1,11 @@
+[package]
+name = "wscript"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+ariadne = "0.1.5"
+unicode-xid = "0.2.3"
+
+[dependencies.wgpu]
+path = "../wgpu/wgpu"

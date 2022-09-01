@@ -1,0 +1,158 @@
+//! Abstract syntax tree for wgpu-script.
+
+/// A span of wscript source code, as a byte range.
+pub type Span = std::ops::Range<usize>;
+
+/// A wscript statement.
+#[derive(Debug)]
+pub struct Statement {
+    /// Information specific to a particular kind of statement.
+    pub kind: StatementKind,
+
+    /// The statement's position within the script.
+    pub span: Span,
+}
+
+#[derive(Debug)]
+pub enum StatementKind {
+    /// Create a buffer.
+    Buffer {
+        binding: Binding,
+
+        /// The type of the data stored in the buffer
+        ty: Type,
+
+        /// The value stored in the buffer, of the given type
+        value: Expression,
+    },
+
+    /// Run a compute shader.
+    Dispatch {
+        /// WGSL source code for the compute shader.
+        wgsl: Wgsl,
+    },
+
+    /// Check the contents of a buffer against expected values.
+    Check {
+        binding: Option<(u32, u32)>,
+        value: Expression,
+    },
+}
+
+#[derive(Debug)]
+pub struct Binding {
+    pub group: u32,
+    pub index: u32,
+
+    pub group_span: Option<Span>,
+    pub index_span: Option<Span>,
+}
+
+#[derive(Debug)]
+pub struct Wgsl {
+    /// WGSL source text, with all common indentation removed.
+    pub text: String,
+
+    /// Indentation depth, in columns
+    pub indentation: usize,
+
+    /// Position of this WGSL source code in the script.
+    pub span: Span,
+}
+
+#[derive(Debug)]
+pub struct Expression {
+    pub kind: ExpressionKind,
+    pub span: Span,
+}
+
+#[derive(Debug)]
+pub enum ExpressionKind {
+    Literal(f64),
+    Sequence(Vec<Expression>),
+    Range(Box<std::ops::Range<Expression>>),
+    Unary {
+        op: UnaryOp,
+        operand: Box<Expression>,
+    },
+    Binary {
+        left: Box<Expression>,
+        op: BinaryOp,
+        right: Box<Expression>,
+    },
+    Nullary(Nullary),
+}
+
+#[derive(Debug)]
+pub enum UnaryOp {
+    Negate,
+}
+
+#[derive(Debug)]
+pub enum BinaryOp {
+    Add,
+    Subtract,
+}
+
+#[derive(Debug)]
+pub enum Nullary {
+    XHat,
+    YHat,
+    ZHat,
+    Identity,
+}
+
+/// The type of a value in a buffer.
+#[derive(Debug)]
+pub enum Type {
+    /// A scalar type.
+    Scalar { kind: ScalarKind, span: Span },
+
+    /// A vector type.
+    Vector {
+        size: VectorSize,
+        component: ScalarKind,
+
+        /// The span of the type constructor: `vec2`, say.
+        constructor_span: Span,
+
+        /// The span of the component type.
+        component_span: Span,
+    },
+
+    /// A matrix type (elements are always `f32`).
+    Matrix {
+        rows: VectorSize,
+        columns: VectorSize,
+
+        /// The span of the type constructor: `mat3x2`, say.
+        constructor_span: Span,
+    },
+
+    /// An array type.
+    Array {
+        /// The type of the elements of this array.
+        element_type: Box<Type>,
+
+        /// The number of elements in the array, if given.
+        length: Option<usize>,
+    },
+}
+
+/// A scalar type
+#[derive(Debug, Eq, PartialEq)]
+pub enum ScalarKind {
+    I32,
+    U32,
+    F32,
+    Bool,
+}
+
+/// The number of components in a vector.
+#[repr(u8)]
+#[derive(Debug, Eq, PartialEq)]
+pub enum VectorSize {
+    Vec2 = 2,
+    Vec3 = 3,
+    Vec4 = 4,
+}
