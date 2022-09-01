@@ -4,6 +4,8 @@ use unicode_xid::UnicodeXID;
 
 use super::ast::{Span, VectorSize};
 
+use std::str::FromStr;
+
 #[derive(Debug, PartialEq)]
 pub enum Token {
     End,
@@ -53,12 +55,12 @@ pub enum TokenErrorKind {
     UnrecognizedWord,
 }
 
-pub fn get_token(input: &str, whole_length: usize) -> Result<TokenOk, TokenError> {
+pub fn get_token(input: &str, whole_len: usize) -> Result<TokenOk, TokenError> {
     let mut rest = input.trim_start();
     let mut token_start;
 
     let (token, rest) = loop {
-        token_start = whole_length - rest.len();
+        token_start = whole_len - rest.len();
         if rest.is_empty() {
             break (Token::End, rest);
         } else if let Some(comment) = rest.strip_prefix("//") {
@@ -70,9 +72,9 @@ pub fn get_token(input: &str, whole_length: usize) -> Result<TokenOk, TokenError
         } else if let Some(rest) = rest.strip_prefix("..") {
             break (Token::Range, rest);
         } else if rest.starts_with(|ch: char| ch.is_ascii_digit()) {
-            break get_number(rest)?;
+            break get_number(rest, whole_len)?;
         } else if rest.starts_with(|ch: char| ch.is_xid_start()) {
-            return get_ident(rest, token_start);
+            return get_ident(rest, whole_len);
         } else {
             let mut chars = rest.chars();
             let first = chars.next().unwrap();
@@ -80,7 +82,7 @@ pub fn get_token(input: &str, whole_length: usize) -> Result<TokenOk, TokenError
         }
     };
 
-    let token_end = whole_length - rest.len();
+    let token_end = whole_len - rest.len();
 
     Ok(TokenOk {
         token,
@@ -89,15 +91,36 @@ pub fn get_token(input: &str, whole_length: usize) -> Result<TokenOk, TokenError
     })
 }
 
-fn get_number(input: &str) -> Result<(Token, &str), TokenError> {
-    todo!()
+fn get_number(input: &str, whole_len: usize) -> Result<(Token, &str), TokenError> {
+    dbg!(input);
+    let rest = input.trim_start_matches(|ch: char| ch.is_ascii_digit());
+    dbg!(rest);
+    let rest = if let Some(rest) = rest.strip_prefix('.') {
+        rest.trim_start_matches(|ch: char| ch.is_ascii_digit())
+    } else {
+        rest
+    };
+    let rest = if let Some(rest) = rest.strip_prefix('e') {
+        rest.trim_start_matches(|ch: char| ch.is_ascii_digit())
+    } else {
+        rest
+    };
+
+    let number_text = &input[..input.len() - rest.len()];
+    dbg!(number_text);
+    match f64::from_str(number_text) {
+        Ok(n) => Ok((Token::Literal(n), rest)),
+        Err(_) => Err(TokenError {
+            kind: TokenErrorKind::UnrecognizedWord,
+            span: whole_len - input.len()..whole_len - rest.len(),
+        }),
+    }
 }
 
-fn get_ident(input: &str, start: usize) -> Result<TokenOk, TokenError> {
+fn get_ident(input: &str, whole_len: usize) -> Result<TokenOk, TokenError> {
     let rest = input.trim_start_matches(|ch: char| ch.is_xid_continue());
-    let len = input.len() - rest.len();
-    let ident = &input[..len];
-    let span = start..start + len;
+    let ident = &input[..input.len() - rest.len()];
+    let span = whole_len - input.len()..whole_len - rest.len();
 
     use VectorSize::*;
     let token = match ident {
@@ -264,5 +287,37 @@ mod tests {
                        kind: TokenErrorKind::UnrecognizedWord, 
                        span: 0..6,
                    }));
+
+        assert_eq!(collect_tokens("mat2x3 4 5 6"),
+                   vec![
+                       (Token::Mat { columns: Vec2, rows: Vec3 }, 0..6),
+                       (Token::Literal(4.0), 7..8),
+                       (Token::Literal(5.0), 9..10),
+                       (Token::Literal(6.0), 11..12),
+                       (Token::End, 12..12),
+                   ]);
+    }
+
+    fn check_number(input: &str) -> (f64, std::ops::Range<usize>) {
+        match get_token(input, 1000 + input.len()) {
+            Ok(TokenOk {
+                token: Token::Literal(n),
+                span,
+                ..
+            }) => (n, span),
+            other => panic!("Unexpected result in check_number test: {:?}", other),
+        }
+    }
+
+    #[test]
+    fn numbers() {
+        assert_eq!(check_number("  0  "), (0.0, 1002..1003));
+        assert_eq!(check_number("  9  "), (9.0, 1002..1003));
+        assert_eq!(check_number("  10  "), (10.0, 1002..1004));
+        assert_eq!(check_number("  99  "), (99.0, 1002..1004));
+        assert_eq!(check_number("  4294967295  "), (4294967295.0, 1002..1012));
+        assert_eq!(check_number("   10.125  "), (10.125, 1003..1009));
+        assert_eq!(check_number("   1e4  "), (10000.0, 1003..1006));
+        assert_eq!(check_number("   1.2e4  "), (12000.0, 1003..1008));
     }
 }
