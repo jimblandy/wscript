@@ -1,7 +1,9 @@
 //! Abstract syntax tree for wgpu-script.
 
 /// A span of wscript source code, as a byte range.
-pub type Span = std::ops::Range<usize>;
+pub type Span = (usize, std::ops::Range<usize>);
+
+pub type Program = Vec<Statement>;
 
 /// A wscript statement.
 #[derive(Debug)]

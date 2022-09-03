@@ -4,7 +4,10 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
+anyhow = "1.0"
+argh = "0.1.8"
 ariadne = "0.1.5"
+indexmap = "1.9"
 unicode-xid = "0.2.3"
 
 [dependencies.wgpu]

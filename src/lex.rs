@@ -53,9 +53,10 @@ pub struct TokenError {
 #[derive(Debug, Eq, PartialEq)]
 pub enum TokenErrorKind {
     UnrecognizedWord,
+    NumberOutOfRange,
 }
 
-pub fn get_token(input: &str, whole_len: usize) -> Result<TokenOk, TokenError> {
+pub fn get_token(input: &str, source_id: usize, whole_len: usize) -> Result<TokenOk, TokenError> {
     let mut rest = input.trim_start();
     let mut token_start;
 
@@ -72,9 +73,9 @@ pub fn get_token(input: &str, whole_len: usize) -> Result<TokenOk, TokenError> {
         } else if let Some(rest) = rest.strip_prefix("..") {
             break (Token::Range, rest);
         } else if rest.starts_with(|ch: char| ch.is_ascii_digit()) {
-            break get_number(rest, whole_len)?;
+            break get_number(rest, source_id, whole_len)?;
         } else if rest.starts_with(|ch: char| ch.is_xid_start()) {
-            return get_ident(rest, whole_len);
+            return get_ident(rest, source_id, whole_len);
         } else {
             let mut chars = rest.chars();
             let first = chars.next().unwrap();
@@ -86,15 +87,13 @@ pub fn get_token(input: &str, whole_len: usize) -> Result<TokenOk, TokenError> {
 
     Ok(TokenOk {
         token,
-        span: token_start..token_end,
+        span: (source_id, token_start..token_end),
         rest,
     })
 }
 
-fn get_number(input: &str, whole_len: usize) -> Result<(Token, &str), TokenError> {
-    dbg!(input);
+fn get_number(input: &str, source_id: usize, whole_len: usize) -> Result<(Token, &str), TokenError> {
     let rest = input.trim_start_matches(|ch: char| ch.is_ascii_digit());
-    dbg!(rest);
     let rest = if let Some(rest) = rest.strip_prefix('.') {
         rest.trim_start_matches(|ch: char| ch.is_ascii_digit())
     } else {
@@ -107,20 +106,24 @@ fn get_number(input: &str, whole_len: usize) -> Result<(Token, &str), TokenError
     };
 
     let number_text = &input[..input.len() - rest.len()];
-    dbg!(number_text);
-    match f64::from_str(number_text) {
-        Ok(n) => Ok((Token::Literal(n), rest)),
-        Err(_) => Err(TokenError {
-            kind: TokenErrorKind::UnrecognizedWord,
-            span: whole_len - input.len()..whole_len - rest.len(),
-        }),
+
+    // Parsing should always succeed, given that we checked the syntax
+    // above. Values that are out of range return infinity.
+    let n = f64::from_str(number_text).unwrap();
+    if n.is_infinite() {
+        Err(TokenError {
+            kind: TokenErrorKind::NumberOutOfRange,
+            span: (source_id, whole_len - input.len()..whole_len - rest.len()),
+        })
+    } else {
+        Ok((Token::Literal(n), rest))
     }
 }
 
-fn get_ident(input: &str, whole_len: usize) -> Result<TokenOk, TokenError> {
+fn get_ident(input: &str, source_id: usize, whole_len: usize) -> Result<TokenOk, TokenError> {
     let rest = input.trim_start_matches(|ch: char| ch.is_xid_continue());
     let ident = &input[..input.len() - rest.len()];
-    let span = whole_len - input.len()..whole_len - rest.len();
+    let span = (source_id, whole_len - input.len()..whole_len - rest.len());
 
     use VectorSize::*;
     let token = match ident {
@@ -184,19 +187,39 @@ fn get_ident(input: &str, whole_len: usize) -> Result<TokenOk, TokenError> {
     Ok(TokenOk { token, span, rest })
 }
 
+impl TokenError {
+    pub fn build_report(&self, builder: &mut crate::error::ReportBuilder) {
+        let message;
+        match self.kind {
+            TokenErrorKind::UnrecognizedWord => {
+                message = Some("unrecognized word");
+            },
+            TokenErrorKind::NumberOutOfRange => {
+                message = Some("number out of range");
+            }
+        }
+        let mut label = ariadne::Label::new(self.span.clone());
+        if let Some(message) = message {
+            label = label.with_message(message);
+        }
+        builder.add_label(label);
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
 
-    fn collect_tokens(mut input: &str) -> Vec<(Token, Span)> {
+    fn collect_tokens(mut input: &str) -> Vec<(Token, std::ops::Range<usize>)> {
         let whole_length = input.len();
         let mut tokens = vec![];
         loop {
             let before = input;
-            match get_token(input, whole_length) {
+            match get_token(input, 1742, whole_length) {
                 Ok(TokenOk { token, span, rest }) => {
                     let done = token == Token::End;
-                    tokens.push((token, span));
+                    assert_eq!(span.0, 1742);
+                    tokens.push((token, span.1));
                     if done {
                         return tokens;
                     }
@@ -282,10 +305,10 @@ mod tests {
         assert_eq!(collect_tokens("// comment no newline"),
                    vec![(Token::End, 21..21)]);
 
-        assert_eq!(get_token("slurve", 6),
+        assert_eq!(get_token("slurve", 1789, 6),
                    Err(TokenError {
                        kind: TokenErrorKind::UnrecognizedWord, 
-                       span: 0..6,
+                       span: (1789, 0..6),
                    }));
 
         assert_eq!(collect_tokens("mat2x3 4 5 6"),
@@ -299,12 +322,12 @@ mod tests {
     }
 
     fn check_number(input: &str) -> (f64, std::ops::Range<usize>) {
-        match get_token(input, 1000 + input.len()) {
+        match get_token(input, 1742, 1000 + input.len()) {
             Ok(TokenOk {
                 token: Token::Literal(n),
                 span,
                 ..
-            }) => (n, span),
+            }) => (n, span.1),
             other => panic!("Unexpected result in check_number test: {:?}", other),
         }
     }
@@ -319,5 +342,10 @@ mod tests {
         assert_eq!(check_number("   10.125  "), (10.125, 1003..1009));
         assert_eq!(check_number("   1e4  "), (10000.0, 1003..1006));
         assert_eq!(check_number("   1.2e4  "), (12000.0, 1003..1008));
+        assert_eq!(get_token("   1e1000  ", 13, 11),
+                   Err(TokenError {
+                       kind: TokenErrorKind::NumberOutOfRange,
+                       span: (13, 3..9)
+                   }));
     }
 }
