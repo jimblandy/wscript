@@ -1,14 +1,13 @@
-#![allow(dead_code, unused_imports)]
-
-use anyhow::{Result, Context};
+#![allow(dead_code)]
+use anyhow::{Context, Result};
 use argh::FromArgs;
 
-use std::{fs, io, path};
+use std::{fs, path};
 
 mod ast;
+mod error;
 mod lex;
 mod parse;
-mod error;
 
 #[derive(FromArgs)]
 /// Execute a `wgpu` script.
@@ -28,7 +27,7 @@ fn main() -> Result<()> {
     let program = match parse::parse(&script, source_id) {
         Ok(program) => program,
         Err(parse_error) => {
-            parse_error.report().eprint(cache);
+            parse_error.report().eprint(cache).unwrap();
             std::process::exit(1);
         }
     };
