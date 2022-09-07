@@ -6,6 +6,9 @@ use super::ast::{Span, VectorSize};
 
 use std::str::FromStr;
 
+#[cfg(test)]
+mod tests;
+
 #[derive(Debug, PartialEq)]
 pub enum Token {
     End,
@@ -276,51 +279,51 @@ impl<'i> Input<'i> {
         Ok(TokenOk { token, span })
     }
 
-/// Parse a source block.
-///
-/// When this is called, `self.rest` points to the introducing `"""`,
-/// and `rest` is the text following it.
-///
-/// A source block starts with `"""`, and includes all following
-/// lines that are more indented than the line containing the
-/// `"""`. Blank lines do not terminate the block. There is no
-/// closing `"""`. Leading and trailing blank lines and common
-/// indentation are removed. No indentation may include tabs,
-/// including that of the line containing the introducing `"""`.
-///
-/// For example:
-///
-/// ```text
-/// dispatch """
-///
-///     @group(0) @binding(0)
-///     var<storage> buf: array<u32, 4096>;
-///
-///     @compute
-///     @workgroup_size(64)
-///     fn add_one(@builtin(global_invocation_id) i: i32) {
-///         buf[i] += 1;
-///     }
-///
-/// check: 1 .. 4097
-/// ```
-///
-/// The code block here includes the eight lines:
-///
-/// ```text
-/// @group(0) @binding(0)
-/// var<storage> buf: array<u32, 4096>;
-///
-/// @compute
-/// @workgroup_size(64)
-/// fn add_one(@builtin(global_invocation_id) i: i32) {
-///     buf[i] += 1;
-/// }
-/// ```
-///
-/// It does not including the leading and trailing blank lines.
-/// The blank line in the midst of the code does not need to have
-/// leading spaces to avoid ending the block.
+    /// Parse a source block.
+    ///
+    /// When this is called, `self.rest` points to the introducing `"""`,
+    /// and `rest` is the text following it.
+    ///
+    /// A source block starts with `"""`, and includes all following
+    /// lines that are more indented than the line containing the
+    /// `"""`. Blank lines do not terminate the block. There is no
+    /// closing `"""`. Leading and trailing blank lines and common
+    /// indentation are removed. No indentation may include tabs,
+    /// including that of the line containing the introducing `"""`.
+    ///
+    /// For example:
+    ///
+    /// ```text
+    /// dispatch """
+    ///
+    ///     @group(0) @binding(0)
+    ///     var<storage> buf: array<u32, 4096>;
+    ///
+    ///     @compute
+    ///     @workgroup_size(64)
+    ///     fn add_one(@builtin(global_invocation_id) i: i32) {
+    ///         buf[i] += 1;
+    ///     }
+    ///
+    /// check: 1 .. 4097
+    /// ```
+    ///
+    /// The code block here includes the eight lines:
+    ///
+    /// ```text
+    /// @group(0) @binding(0)
+    /// var<storage> buf: array<u32, 4096>;
+    ///
+    /// @compute
+    /// @workgroup_size(64)
+    /// fn add_one(@builtin(global_invocation_id) i: i32) {
+    ///     buf[i] += 1;
+    /// }
+    /// ```
+    ///
+    /// It does not including the leading and trailing blank lines.
+    /// The blank line in the midst of the code does not need to have
+    /// leading spaces to avoid ending the block.
     fn get_source_block(&mut self, after_quote: &'i str) -> TokenResult {
         // Make sure the rest of the line after the `"""` is just whitespace.
         let mut body = if let Some((quote_to_eol, after)) = after_quote.split_once('\n') {
@@ -345,42 +348,68 @@ impl<'i> Input<'i> {
         let introducing_indent = {
             let before_quote = &self.text[..self.offset(self.rest)];
             let introducing_line = if let Some((before, _)) = before_quote.rsplit_once('\n') {
-                &self.text[self.offset(before) + 1..]
+                &self.text[before.len() + 1..]
             } else {
                 self.text
             };
             self.indentation(introducing_line, CodeBlockPart::Introducing)?
         };
 
-        let mut code = String::new();
-        loop {
-            // This catches end-of-input, too.
-            if self.indentation(body, CodeBlockPart::Body)? <= introducing_indent {
-                // blank lines (including lines containing only whitespace)
-                // don't terminate code blocks.
-                if !body.trim().is_empty() {
-                    break;
-                }
-            }
+        let mut lines = vec![];
+        let mut common_indentation = usize::MAX;
+        while !body.is_empty() {
+            let indentation = self.indentation(body, CodeBlockPart::Body)?;
 
-            let line;
-            if let Some((next, rest)) = body.split_once('\n') {
-                line = next;
-                body = rest;
-            } else {
-                line = body;
-                body = "";
-            }
-                    
+            // Find the extent of the next line.
+            let (line, next) = body.split_once('\n').unwrap_or((body, ""));
             let line = line.strip_suffix('\r').unwrap_or(line);
 
-            // We know this is a character boundary, because
-            // `self.indentation` checks that the indentation is
-            // all single-byte characters.
-            code.push_str(&line[introducing_indent..]);
+            // Don't trim the front - that's indentation, some of which we want
+            // to preserve. Trimming from the end is equally effective in
+            // detecting blank lines.
+            let line = line.trim_end();
+
+            // blank lines (including lines containing only whitespace) don't
+            // terminate code blocks, and don't affect the common indentation.
+            if !line.is_empty() {
+                if indentation <= introducing_indent {
+                    break;
+                }
+                common_indentation = std::cmp::min(common_indentation, indentation);
+            }
+
+            lines.push(line);
+            body = next;
         }
 
         let (_, span) = self.advance_to(body);
+
+        // Drop leading and trailing blank lines.
+        {
+            let leading_blanks = lines
+                .iter()
+                .position(|line| !line.is_empty())
+                .unwrap_or(lines.len());
+            lines.drain(..leading_blanks);
+
+            let until_trailing_blanks = lines
+                .iter()
+                .rposition(|line| !line.is_empty())
+                .map(|n| n + 1)
+                .unwrap_or(0);
+            lines.truncate(until_trailing_blanks);
+        }
+
+        // Now that we know the common indentation, we can build the text.
+        let mut code = String::new();
+        for line in lines {
+            if line.len() > common_indentation {
+                // We know this is a character boundary, because we required
+                // all indentation to be ASCII spaces only.
+                code.push_str(&line[common_indentation..]);
+            }
+            code.push('\n');
+        }
 
         Ok(TokenOk {
             span,
@@ -461,209 +490,5 @@ impl TokenError {
                 );
             }
         };
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    fn collect_tokens(input: &str) -> Vec<(Token, std::ops::Range<usize>)> {
-        let mut input = Input::new(input, 1729);
-        let mut tokens = vec![];
-        loop {
-            let before = input.text;
-            match input.get_token() {
-                Ok(TokenOk { token, span }) => {
-                    let done = token == Token::End;
-                    assert_eq!(span.0, 1729);
-                    tokens.push((token, span.1));
-                    if done {
-                        return tokens;
-                    }
-                }
-                Err(_) => {
-                    panic!("get_token found unexpected character at: {:?}", before);
-                }
-            }
-        }
-    }
-
-    #[test]
-    #[rustfmt::skip]
-    fn basic() {
-        use VectorSize::*;
-
-        assert_eq!(collect_tokens(""), vec![(Token::End, 0..0)]);
-        assert_eq!(collect_tokens("+-{}()<>"), 
-                   vec![
-                       (Token::Symbol('+'), 0..1),
-                       (Token::Symbol('-'), 1..2),
-                       (Token::Symbol('{'), 2..3),
-                       (Token::Symbol('}'), 3..4),
-                       (Token::Symbol('('), 4..5),
-                       (Token::Symbol(')'), 5..6),
-                       (Token::Symbol('<'), 6..7),
-                       (Token::Symbol('>'), 7..8),
-                       (Token::End, 8..8)
-                   ]);
-
-        assert_eq!(collect_tokens("buffer..dispatch check  group\tbinding array\n"),
-                   vec![
-                        (Token::Buffer,   0..6),
-                        (Token::Range,    6..8),
-                        (Token::Dispatch, 8..16),
-                        (Token::Check,    17..22),
-                        (Token::Group,    24..29),
-                        (Token::Binding,  30..37),
-                        (Token::Array,    38..43),
-                        (Token::End,      44..44),
-                   ]);
-
-        assert_eq!(collect_tokens("       f32 // comment\n\
-                                   // comment at beginning of line\n\
-                                   i32\n\
-                                   u32 bool        "),
-                   vec![
-                       (Token::F32, 7..10),
-                       (Token::I32, 54..57),
-                       (Token::U32, 58..61),
-                       (Token::Bool, 62..66),
-                       (Token::End, 74..74),
-                   ]);
-
-        assert_eq!(collect_tokens("vec2 vec3 vec4"),
-                   vec![
-                       (Token::Vec(Vec2), 0..4),
-                       (Token::Vec(Vec3), 5..9),
-                       (Token::Vec(Vec4), 10..14),
-                       (Token::End, 14..14)
-                   ]);
-
-        assert_eq!(collect_tokens("mat2x2 mat2x3 mat2x4 \
-                                   mat3x2 mat3x3 mat3x4 \
-                                   mat4x2 mat4x3 mat4x4"),
-                   vec![
-                       (Token::Mat { columns: Vec2, rows: Vec2 }, 0..6),
-                       (Token::Mat { columns: Vec2, rows: Vec3 }, 7..13),
-                       (Token::Mat { columns: Vec2, rows: Vec4 }, 14..20),
-                       (Token::Mat { columns: Vec3, rows: Vec2 }, 21..27),
-                       (Token::Mat { columns: Vec3, rows: Vec3 }, 28..34),
-                       (Token::Mat { columns: Vec3, rows: Vec4 }, 35..41),
-                       (Token::Mat { columns: Vec4, rows: Vec2 }, 42..48),
-                       (Token::Mat { columns: Vec4, rows: Vec3 }, 49..55),
-                       (Token::Mat { columns: Vec4, rows: Vec4 }, 56..62),
-                       (Token::End, 62..62)
-                   ]);
-
-        assert_eq!(collect_tokens("// comment until end\n"),
-                   vec![(Token::End, 21..21)]);
-
-        assert_eq!(collect_tokens("// comment no newline"),
-                   vec![(Token::End, 21..21)]);
-
-        let mut input = Input::new("slurve", 1789);
-        assert_eq!(input.get_token(),
-                   Err(TokenError {
-                       kind: TokenErrorKind::UnrecognizedWord, 
-                       span: (1789, 0..6),
-                   }));
-
-        assert_eq!(collect_tokens("mat2x3 4 5 6"),
-                   vec![
-                       (Token::Mat { columns: Vec2, rows: Vec3 }, 0..6),
-                       (Token::Literal(4.0), 7..8),
-                       (Token::Literal(5.0), 9..10),
-                       (Token::Literal(6.0), 11..12),
-                       (Token::End, 12..12),
-                   ]);
-    }
-
-    fn check_number(input: &str) -> (f64, std::ops::Range<usize>) {
-        let mut input = Input::new(input, 1728);
-        match input.get_token() {
-            Ok(TokenOk {
-                token: Token::Literal(n),
-                span,
-                ..
-            }) => (n, span.1),
-            other => panic!("Unexpected result in check_number test: {:?}", other),
-        }
-    }
-
-    #[test]
-    fn numbers() {
-        assert_eq!(check_number("  0  "), (0.0, 2..3));
-        assert_eq!(check_number("  9  "), (9.0, 2..3));
-        assert_eq!(check_number("  10  "), (10.0, 2..4));
-        assert_eq!(check_number("  99  "), (99.0, 2..4));
-        assert_eq!(check_number("  4294967295  "), (4294967295.0, 2..12));
-        assert_eq!(check_number("   10.125  "), (10.125, 3..9));
-        assert_eq!(check_number("   1e4  "), (10000.0, 3..6));
-        assert_eq!(check_number("   1.2e4  "), (12000.0, 3..8));
-        let mut input = Input::new("   1e1000  ", 13);
-        assert_eq!(
-            input.get_token(),
-            Err(TokenError {
-                kind: TokenErrorKind::NumberOutOfRange,
-                span: (13, 3..9)
-            })
-        );
-    }
-
-    #[test]
-    fn indentation() {
-        use CodeBlockPart::*;
-
-        let input = Input::new("  two spaces\n    four spaces indentation\nnone", 1729);
-        assert_eq!(input.indentation(&input.text[0..], Introducing), Ok(2));
-        assert_eq!(input.indentation(&input.text[2..], Introducing), Ok(0));
-        assert_eq!(input.indentation(&input.text[13..], Introducing), Ok(4));
-        assert_eq!(input.indentation(&input.text[41..], Introducing), Ok(0));
-
-        let input = Input::new("none", 1000);
-        assert_eq!(input.indentation(&input.text[0..], Introducing), Ok(0));
-
-        let input = Input::new("  \t  tab\n", 729);
-        assert_eq!(
-            input.indentation(&input.text[0..], Body),
-            Err(TokenError {
-                span: (729, 0..5),
-                kind: TokenErrorKind::TabInCodeBlock {
-                    tab: (729, 2..3),
-                    part: CodeBlockPart::Body,
-                }
-            })
-        );
-    }
-
-    #[test]
-    fn code_block() {
-        fn check(block: &str, quote_start: usize) -> TokenResult {
-            let mut input = Input::new(block, 1);
-            input.rest = &input.text[quote_start..];
-            input.get_source_block(&input.text[quote_start + 3..])
-        }
-
-        assert_eq!(
-            check("  boo \"\"\" junk  \n   body\n", 6),
-            Err(TokenError {
-                span: (1, 6..16),
-                kind: TokenErrorKind::JunkAfterCodeBlockStart((1, 10..14))
-            })
-        );
-
-        assert_eq!(
-            check(" \t boo \"\"\" \n   body\n", 7),
-            Err(TokenError {
-                span: (1, 0..3),
-                kind: TokenErrorKind::TabInCodeBlock {
-                    tab: (1, 1..2),
-                    part: CodeBlockPart::Introducing,
-                }
-            })
-        );
-
-        // carriage return before eol on introducing line
     }
 }
