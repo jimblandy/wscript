@@ -158,3 +158,8 @@ pub enum VectorSize {
     Vec3 = 3,
     Vec4 = 4,
 }
+
+pub fn join_spans(left: &Span, right: &Span) -> Span {
+    assert_eq!(left.0, right.0);
+    (left.0, left.1.start..right.1.end)
+}

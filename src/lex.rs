@@ -479,9 +479,13 @@ impl TokenError {
                 );
 
                 match part {
-                    CodeBlockPart::Introducing => "tab character in indentation of line introducing code block",
-                    CodeBlockPart::Body => "tab character in indentation of the body of the code block",
-                }                    
+                    CodeBlockPart::Introducing => {
+                        "tab character in indentation of line introducing code block"
+                    }
+                    CodeBlockPart::Body => {
+                        "tab character in indentation of the body of the code block"
+                    }
+                }
             }
         }
     }
