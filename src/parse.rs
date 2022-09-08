@@ -1,14 +1,14 @@
 //! Parsing wscript.
 
 use crate::ast::{self, Program, Span};
-use crate::error;
 use crate::lex::{Input, Token, TokenError};
+use error::{ParseError, ParseErrorKind};
+
+mod error;
+mod tests;
 
 pub fn parse(source: &str, source_id: usize) -> Result<Program, ParseError> {
-    let mut context = Context::new(source, source_id).map_err(|token_err| ParseError {
-        kind: ParseErrorKind::LexError(token_err.clone()),
-        span: token_err.span,
-    })?;
+    let mut context = Context::new(source, source_id)?;
 
     let mut program = vec![];
     loop {
@@ -49,43 +49,91 @@ impl<'a> Context<'a> {
         &self.next
     }
 
-    fn parse_statement(&mut self) -> Result<ast::Statement, ParseError> {
-        todo!()
+    fn next(&mut self) -> Result<(Token, Span), TokenError> {
+        let crate::lex::TokenOk { token, span } = self.input.get_token()?;
+        let token = std::mem::replace(&mut self.next, token);
+        let span = std::mem::replace(&mut self.next_span, span);
+        Ok((token, span))
     }
-}
 
-#[derive(Debug)]
-pub struct ParseError {
-    kind: ParseErrorKind,
-    span: Span,
-}
+    /// Return true if the next token is `token`, and consume it.
+    ///
+    /// If the next token isn't `token`, return false and leave the
+    /// state of the input unchanged.
+    fn take_if(&mut self, token: &Token) -> Result<bool, ParseError> {
+        if self.peek() != token {
+            return Ok(false);
+        }
+        self.next()?;
+        Ok(true)
+    }
 
-#[derive(Debug)]
-pub enum ParseErrorKind {
-    LexError(TokenError),
-    OhGolly,
-}
+    fn expect(&mut self, expected: &Token, error: ParseErrorKind) -> Result<(), ParseError> {
+        if !self.take_if(expected)? {
+            return Err(self.next_unexpected(error));
+        }
+        Ok(())
+    }
 
-impl ParseError {
-    pub fn report(&self) -> error::Report {
-        use ariadne::{Report, ReportKind};
-
-        let (source_id, range) = self.span.clone();
-        let mut builder = Report::build(ReportKind::Error, source_id, range.start);
-        match self.kind {
-            ParseErrorKind::LexError(ref lex_error) => {
-                lex_error.build_report(&mut builder);
-            }
-            ParseErrorKind::OhGolly => {
-                builder.set_message("Oh, golly!");
-                builder.add_label(
-                    ariadne::Label::new((source_id, 142..150)).with_message("no computies"),
-                );
-                builder.add_label(
-                    ariadne::Label::new((source_id, 7..16)).with_message("nor groupies"),
-                );
+    fn expect_unsigned_integer(&mut self, message: &'static str, help: &'static str) -> Result<u64, ParseError> {
+        if let Token::Number(n) = *self.peek() {
+            if n as u64 as f64 == n {
+                self.next()?;
+                return Ok(n as u64);
             }
         }
-        builder.finish()
+
+        Err(self.next_unexpected(ParseErrorKind::ExpectedInteger {
+            unsigned: true,
+            message,
+            help,
+        }))
+    }
+
+    fn error(&self, span: Span, kind: ParseErrorKind) -> ParseError {
+        ParseError {
+            span,
+            kind,
+        }
+    }
+
+    fn next_unexpected(&self, error: ParseErrorKind) -> ParseError {
+        self.error(self.next_span.clone(), error)
+    }
+
+    fn parse_statement(&mut self) -> Result<ast::Statement, ParseError> {
+        if self.take_if(&Token::Buffer)? {
+            self.parse_buffer()
+        } else {
+            Err(self.next_unexpected(ParseErrorKind::ExpectedStatement))
+        }
+    }
+
+    fn parse_buffer(&mut self) -> Result<ast::Statement, ParseError> {
+        let mut group = None;
+        let mut binding = None;
+        
+        while self.take_if(&Token::Symbol('@'))? {
+            if self.take_if(&Token::Group)? {
+                self.expect(&Token::Symbol('('), ParseErrorKind::ExpectedGroupAttrParameter)?;
+                group = Some(self.expect_unsigned_integer(
+                    "binding group number must be a positive integer or zero",
+                    "The value `n` in `@group(n)` must be a positive integer or zero.")?);
+                self.expect(&Token::Symbol(')'), ParseErrorKind::ExpectedGroupAttrParameter)?;
+            } else if self.take_if(&Token::Binding)? {
+                self.expect(&Token::Symbol('('), ParseErrorKind::ExpectedBindingAttrParameter)?;
+                binding = Some(self.expect_unsigned_integer(
+                    "binding index must be a positive integer or zero",
+                    "The value `n` in `@binding(n)` must be a positive integer or zero.")?);
+                self.expect(&Token::Symbol(')'), ParseErrorKind::ExpectedBindingAttrParameter)?;
+            }
+        }
+
+        dbg!(&group);
+        dbg!(&binding);
+
+        self.expect(&Token::Symbol(':'), ParseErrorKind::ExpectedBufferAttributeOrType)?;
+
+        todo!()
     }
 }

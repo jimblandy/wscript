@@ -13,7 +13,7 @@ mod tests;
 pub enum Token {
     End,
     Symbol(char),
-    Literal(f64),
+    Number(f64),
 
     /// The '..' operator.
     Range,
@@ -205,7 +205,7 @@ impl<'i> Input<'i> {
             })
         } else {
             Ok(TokenOk {
-                token: Token::Literal(n),
+                token: Token::Number(n),
                 span,
             })
         }
@@ -443,19 +443,16 @@ impl<'i> Input<'i> {
 }
 
 impl TokenError {
-    pub fn build_report(&self, builder: &mut crate::error::ReportBuilder) {
+    pub fn build_report(&self, builder: &mut crate::error::ReportBuilder) -> &'static str {
         use ariadne::Label;
         match self.kind {
             TokenErrorKind::UnrecognizedWord => {
                 builder.set_message("word is not a recognized part of the wscript vocabulary");
-                builder.add_label(Label::new(self.span.clone()).with_message("unrecognized word"));
+                "unrecognized word"
             }
             TokenErrorKind::JunkAfterCodeBlockStart(ref junk) => {
                 builder.set_message(
                     r#"non-whitespace characters following a `"""` code block introducer"#,
-                );
-                builder.add_label(
-                    Label::new(self.span.clone()).with_message("code block is introduced here"),
                 );
                 builder.add_label(
                     Label::new(junk.clone()).with_message("this character isn't allowed here "),
@@ -463,23 +460,15 @@ impl TokenError {
                 builder.set_help(
                     r#"The `"""` that starts a code block must not have anything else following it on the line."#
                 );
+                "code block is introduced here"
             }
             TokenErrorKind::NumberOutOfRange => {
-                builder.add_label(
-                    Label::new(self.span.clone()).with_message("number too large to represent"),
-                );
                 builder.set_help(
                     "wscript numbers must be representable as a 64-bit IEEE double value.",
                 );
+                "number too large to represent"
             }
             TokenErrorKind::TabInCodeBlock { ref tab, part } => {
-                builder.add_label(Label::new(self.span.clone()).with_message(format!(
-                    "tab character in indentation of code block's {}",
-                    match part {
-                        CodeBlockPart::Introducing => "introducing line",
-                        CodeBlockPart::Body => "body",
-                    }
-                )));
                 builder.add_label(
                     Label::new(tab.clone()).with_message("this tab character is not allowed"),
                 );
@@ -488,7 +477,12 @@ impl TokenError {
                      blocks, as well as the lines that make up its content, must be indented\n\
                      with spaces only.",
                 );
+
+                match part {
+                    CodeBlockPart::Introducing => "tab character in indentation of line introducing code block",
+                    CodeBlockPart::Body => "tab character in indentation of the body of the code block",
+                }                    
             }
-        };
+        }
     }
 }

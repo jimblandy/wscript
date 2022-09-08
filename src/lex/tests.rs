@@ -104,9 +104,9 @@ fn collect_tokens(input: &str) -> Vec<(Token, std::ops::Range<usize>)> {
         assert_eq!(collect_tokens("mat2x3 4 5 6"),
                    vec![
                        (Token::Mat { columns: Vec2, rows: Vec3 }, 0..6),
-                       (Token::Literal(4.0), 7..8),
-                       (Token::Literal(5.0), 9..10),
-                       (Token::Literal(6.0), 11..12),
+                       (Token::Number(4.0), 7..8),
+                       (Token::Number(5.0), 9..10),
+                       (Token::Number(6.0), 11..12),
                        (Token::End, 12..12),
                    ]);
     }
@@ -115,7 +115,7 @@ fn check_number(input: &str) -> (f64, std::ops::Range<usize>) {
     let mut input = Input::new(input, 1728);
     match input.get_token() {
         Ok(TokenOk {
-            token: Token::Literal(n),
+            token: Token::Number(n),
             span,
             ..
         }) => (n, span.1),
