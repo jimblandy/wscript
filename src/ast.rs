@@ -103,17 +103,20 @@ pub enum Nullary {
 
 /// The type of a value in a buffer.
 #[derive(Debug)]
-pub enum Type {
+pub struct Type {
+    pub kind: TypeKind,
+    pub span: Span,
+}
+
+#[derive(Debug)]
+pub enum TypeKind {
     /// A scalar type.
-    Scalar(ScalarType),
+    Scalar(ScalarKind),
 
     /// A vector type.
     Vector {
         size: VectorSize,
         component: ScalarKind,
-
-        /// The span of the type constructor: `vec2`, say.
-        constructor_span: Span,
 
         /// The span of the component type.
         component_span: Span,
@@ -123,9 +126,6 @@ pub enum Type {
     Matrix {
         columns: VectorSize,
         rows: VectorSize,
-
-        /// The span of the type constructor: `mat3x2`, say.
-        constructor_span: Span,
     },
 
     /// An array type.
@@ -136,13 +136,6 @@ pub enum Type {
         /// The number of elements in the array, if given.
         length: Option<usize>,
     },
-}
-
-/// A scalar type.
-#[derive(Debug, Eq, PartialEq)]
-pub struct ScalarType {
-    pub kind: ScalarKind,
-    pub span: Span,
 }
 
 /// A scalar type kind.

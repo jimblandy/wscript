@@ -444,6 +444,7 @@ impl<'i> Input<'i> {
 
 impl Token {
     pub fn describe(&self) -> &'static str {
+        use VectorSize as Vs;
         match *self {
             Token::End => "end of file",
             Token::Symbol(_) => "a symbol",
@@ -460,18 +461,18 @@ impl Token {
             Token::I32 => "i32",
             Token::U32 => "u32",
             Token::Bool => "bool",
-            Token::Vec(VectorSize::Vec2) => "vec2",
-            Token::Vec(VectorSize::Vec3) => "vec3",
-            Token::Vec(VectorSize::Vec4) => "vec4",
-            Token::Mat { columns: VectorSize::Vec2, rows: VectorSize::Vec2 } => "mat2x2",
-            Token::Mat { columns: VectorSize::Vec3, rows: VectorSize::Vec2 } => "mat3x2",
-            Token::Mat { columns: VectorSize::Vec4, rows: VectorSize::Vec2 } => "mat4x2",
-            Token::Mat { columns: VectorSize::Vec2, rows: VectorSize::Vec3 } => "mat2x3",
-            Token::Mat { columns: VectorSize::Vec3, rows: VectorSize::Vec3 } => "mat3x3",
-            Token::Mat { columns: VectorSize::Vec4, rows: VectorSize::Vec3 } => "mat4x3",
-            Token::Mat { columns: VectorSize::Vec2, rows: VectorSize::Vec4 } => "mat2x4",
-            Token::Mat { columns: VectorSize::Vec3, rows: VectorSize::Vec4 } => "mat3x4",
-            Token::Mat { columns: VectorSize::Vec4, rows: VectorSize::Vec4 } => "mat4x4",
+            Token::Vec(Vs::Vec2) => "vec2",
+            Token::Vec(Vs::Vec3) => "vec3",
+            Token::Vec(Vs::Vec4) => "vec4",
+            Token::Mat { columns: Vs::Vec2, rows: Vs::Vec2 } => "mat2x2",
+            Token::Mat { columns: Vs::Vec3, rows: Vs::Vec2 } => "mat3x2",
+            Token::Mat { columns: Vs::Vec4, rows: Vs::Vec2 } => "mat4x2",
+            Token::Mat { columns: Vs::Vec2, rows: Vs::Vec3 } => "mat2x3",
+            Token::Mat { columns: Vs::Vec3, rows: Vs::Vec3 } => "mat3x3",
+            Token::Mat { columns: Vs::Vec4, rows: Vs::Vec3 } => "mat4x3",
+            Token::Mat { columns: Vs::Vec2, rows: Vs::Vec4 } => "mat2x4",
+            Token::Mat { columns: Vs::Vec3, rows: Vs::Vec4 } => "mat3x4",
+            Token::Mat { columns: Vs::Vec4, rows: Vs::Vec4 } => "mat4x4",
         }
     }
 }

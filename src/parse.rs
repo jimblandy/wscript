@@ -171,8 +171,8 @@ impl<'a> Context<'a> {
     }
 
     fn parse_type(&mut self) -> Result<ast::Type, ParseError> {
-        if let Some(sty) = self.take_if_scalar_type()? {
-            return Ok(ast::Type::Scalar(sty));
+        if let Some(ss) = self.take_if_scalar_type()? {
+            return Ok(ss.into());
         }
 
         match *self.peek() {
@@ -188,7 +188,7 @@ impl<'a> Context<'a> {
         }
     }
 
-    fn take_if_scalar_type(&mut self) -> Result<Option<ast::ScalarType>, ParseError> {
+    fn take_if_scalar_type(&mut self) -> Result<Option<ScalarAndSpan>, ParseError> {
         let kind = match *self.peek() {
             Token::I32 => ast::ScalarKind::I32,
             Token::U32 => ast::ScalarKind::U32,
@@ -198,7 +198,7 @@ impl<'a> Context<'a> {
         };
 
         let (_, span) = self.next()?;
-        Ok(Some(ast::ScalarType { kind, span }))
+        Ok(Some(ScalarAndSpan { kind, span }))
     }
 
     fn parse_vector_type(
@@ -214,13 +214,16 @@ impl<'a> Context<'a> {
             kind: error.clone(),
         })?;
 
-        self.expect(&Token::Symbol('>'), &error)?;
+        let close = self.expect(&Token::Symbol('>'), &error)?;
+        let span = join_spans(&constructor.1, &close);
 
-        Ok(ast::Type::Vector {
-            size,
-            component: sty.kind,
-            constructor_span: constructor.1,
-            component_span: sty.span,
+        Ok(ast::Type {
+            kind: ast::TypeKind::Vector {
+                size,
+                component: sty.kind,
+                component_span: sty.span,
+            },
+            span,
         })
     }
 
@@ -250,10 +253,12 @@ impl<'a> Context<'a> {
             });
         }
 
-        Ok(ast::Type::Matrix {
-            columns,
-            rows,
-            constructor_span: constructor.1,
+        Ok(ast::Type {
+            kind: ast::TypeKind::Matrix {
+                columns,
+                rows,
+            },
+            span,
         })
     }
 
@@ -304,4 +309,18 @@ fn check_duplicate_attr<T>(
     }
 
     Ok(())
+}
+
+struct ScalarAndSpan {
+    kind: ast::ScalarKind,
+    span: Span
+}
+
+impl From<ScalarAndSpan> for ast::Type {
+    fn from(ss: ScalarAndSpan) -> Self {
+        ast::Type {
+            span: ss.span,
+            kind: ast::TypeKind::Scalar(ss.kind),
+        }
+    }
 }
