@@ -43,11 +43,8 @@ pub enum StatementKind {
 
 #[derive(Debug)]
 pub struct Binding {
-    pub group: u32,
-    pub index: u32,
-
-    pub group_span: Option<Span>,
-    pub index_span: Option<Span>,
+    pub group: (u32, Span),
+    pub binding: (u32, Span),
 }
 
 #[derive(Debug)]
@@ -108,7 +105,7 @@ pub enum Nullary {
 #[derive(Debug)]
 pub enum Type {
     /// A scalar type.
-    Scalar { kind: ScalarKind, span: Span },
+    Scalar(ScalarType),
 
     /// A vector type.
     Vector {
@@ -124,8 +121,8 @@ pub enum Type {
 
     /// A matrix type (elements are always `f32`).
     Matrix {
-        rows: VectorSize,
         columns: VectorSize,
+        rows: VectorSize,
 
         /// The span of the type constructor: `mat3x2`, say.
         constructor_span: Span,
@@ -141,8 +138,15 @@ pub enum Type {
     },
 }
 
-/// A scalar type
+/// A scalar type.
 #[derive(Debug, Eq, PartialEq)]
+pub struct ScalarType {
+    pub kind: ScalarKind,
+    pub span: Span,
+}
+
+/// A scalar type kind.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum ScalarKind {
     I32,
     U32,
@@ -152,7 +156,7 @@ pub enum ScalarKind {
 
 /// The number of components in a vector.
 #[repr(u8)]
-#[derive(Debug, Eq, PartialEq)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum VectorSize {
     Vec2 = 2,
     Vec3 = 3,

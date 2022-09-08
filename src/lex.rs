@@ -442,6 +442,40 @@ impl<'i> Input<'i> {
     }
 }
 
+impl Token {
+    pub fn describe(&self) -> &'static str {
+        match *self {
+            Token::End => "end of file",
+            Token::Symbol(_) => "a symbol",
+            Token::Number(_) => "a number",
+            Token::Range => "a range",
+            Token::Code(_) => "a code block",
+            Token::Buffer => "buffer",
+            Token::Dispatch => "dispatch",
+            Token::Check => "check",
+            Token::Group => "group",
+            Token::Binding => "binding",
+            Token::Array => "array",
+            Token::F32 => "f32",
+            Token::I32 => "i32",
+            Token::U32 => "u32",
+            Token::Bool => "bool",
+            Token::Vec(VectorSize::Vec2) => "vec2",
+            Token::Vec(VectorSize::Vec3) => "vec3",
+            Token::Vec(VectorSize::Vec4) => "vec4",
+            Token::Mat { columns: VectorSize::Vec2, rows: VectorSize::Vec2 } => "mat2x2",
+            Token::Mat { columns: VectorSize::Vec3, rows: VectorSize::Vec2 } => "mat3x2",
+            Token::Mat { columns: VectorSize::Vec4, rows: VectorSize::Vec2 } => "mat4x2",
+            Token::Mat { columns: VectorSize::Vec2, rows: VectorSize::Vec3 } => "mat2x3",
+            Token::Mat { columns: VectorSize::Vec3, rows: VectorSize::Vec3 } => "mat3x3",
+            Token::Mat { columns: VectorSize::Vec4, rows: VectorSize::Vec3 } => "mat4x3",
+            Token::Mat { columns: VectorSize::Vec2, rows: VectorSize::Vec4 } => "mat2x4",
+            Token::Mat { columns: VectorSize::Vec3, rows: VectorSize::Vec4 } => "mat3x4",
+            Token::Mat { columns: VectorSize::Vec4, rows: VectorSize::Vec4 } => "mat4x4",
+        }
+    }
+}
+
 impl TokenError {
     pub fn build_report(&self, builder: &mut crate::error::ReportBuilder) -> &'static str {
         use ariadne::Label;

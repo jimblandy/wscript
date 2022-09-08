@@ -51,6 +51,10 @@ impl<'a> Context<'a> {
         &self.next
     }
 
+    fn peek_span(&self) -> &Span {
+        &self.next_span
+    }
+
     fn next(&mut self) -> Result<(Token, Span), TokenError> {
         let crate::lex::TokenOk { token, span } = self.input.get_token()?;
         let token = std::mem::replace(&mut self.next, token);
@@ -74,6 +78,9 @@ impl<'a> Context<'a> {
         Ok(Some(span))
     }
 
+    /// Require the next token to be `token`, and consume it.
+    ///
+    /// If something else is next, then complain about it using `error`.
     fn expect(&mut self, expected: &Token, error: &ParseErrorKind) -> Result<Span, ParseError> {
         if let Some(span) = self.take_if(expected)? {
             Ok(span)
@@ -85,11 +92,11 @@ impl<'a> Context<'a> {
     fn expect_unsigned_integer(
         &mut self,
         get_message_and_help: impl FnOnce() -> (Cow<'static, str>, Cow<'static, str>),
-    ) -> Result<(u64, Span), ParseError> {
+    ) -> Result<(u32, Span), ParseError> {
         if let Token::Number(n) = *self.peek() {
-            if n as u64 as f64 == n {
+            if n as u32 as f64 == n {
                 let (_, span) = self.next()?;
-                return Ok((n as u64, span));
+                return Ok((n as u32, span));
             }
         }
 
@@ -121,8 +128,8 @@ impl<'a> Context<'a> {
         use error::Attribute as At;
         use error::BufferAttribute as Ba;
 
-        let mut group: Option<(u64, Span)> = None;
-        let mut binding: Option<(u64, Span)> = None;
+        let mut group: Option<(u32, Span)> = None;
+        let mut binding: Option<(u32, Span)> = None;
 
         while let Some(at) = self.take_if(&Token::Symbol('@'))? {
             if self.take_if(&Token::Group)?.is_some() {
@@ -132,14 +139,125 @@ impl<'a> Context<'a> {
             }
         }
 
-        dbg!(&group);
-        dbg!(&binding);
+        let group = group.ok_or_else(|| ParseError {
+            span: keyword.clone(),
+            kind: ParseErrorKind::MissingAttr(At::Buffer(Ba::Group)),
+        })?;
+        let binding = binding.ok_or_else(|| ParseError {
+            span: keyword.clone(),
+            kind: ParseErrorKind::MissingAttr(At::Buffer(Ba::Group)),
+        })?;
+
+        let binding = ast::Binding { group, binding };
 
         self.expect(
             &Token::Symbol(':'),
             &ParseErrorKind::ExpectedBufferAttributeOrType,
         )?;
 
+        let ty = self.parse_type()?;
+
+        self.expect(
+            &Token::Symbol('='),
+            &ParseErrorKind::ExpectedBufferAttributeOrType,
+        )?;
+
+        let value = self.parse_expr()?;
+
+        Ok(ast::Statement {
+            span: join_spans(&keyword, &value.span),
+            kind: ast::StatementKind::Buffer { binding, ty, value },
+        })
+    }
+
+    fn parse_type(&mut self) -> Result<ast::Type, ParseError> {
+        if let Some(sty) = self.take_if_scalar_type()? {
+            return Ok(ast::Type::Scalar(sty));
+        }
+
+        match *self.peek() {
+            Token::Vec(size) => {
+                let token_span = self.next()?;
+                self.parse_vector_type(size, token_span)
+            }
+            Token::Mat { columns, rows } => {
+                let mat_span = self.next()?;
+                self.parse_matrix_type(columns, rows, mat_span)
+            }
+            _ => todo!(),
+        }
+    }
+
+    fn take_if_scalar_type(&mut self) -> Result<Option<ast::ScalarType>, ParseError> {
+        let kind = match *self.peek() {
+            Token::I32 => ast::ScalarKind::I32,
+            Token::U32 => ast::ScalarKind::U32,
+            Token::F32 => ast::ScalarKind::F32,
+            Token::Bool => ast::ScalarKind::Bool,
+            _ => return Ok(None),
+        };
+
+        let (_, span) = self.next()?;
+        Ok(Some(ast::ScalarType { kind, span }))
+    }
+
+    fn parse_vector_type(
+        &mut self,
+        size: ast::VectorSize,
+        constructor: (Token, Span),
+    ) -> Result<ast::Type, ParseError> {
+        let error = ParseErrorKind::ExpectedTypeParameter(constructor.0.describe());
+        self.expect(&Token::Symbol('<'), &error)?;
+
+        let sty = self.take_if_scalar_type()?.ok_or_else(|| ParseError {
+            span: self.peek_span().clone(),
+            kind: error.clone(),
+        })?;
+
+        self.expect(&Token::Symbol('>'), &error)?;
+
+        Ok(ast::Type::Vector {
+            size,
+            component: sty.kind,
+            constructor_span: constructor.1,
+            component_span: sty.span,
+        })
+    }
+
+    fn parse_matrix_type(
+        &mut self,
+        columns: ast::VectorSize,
+        rows: ast::VectorSize,
+        constructor: (Token, Span),
+    ) -> Result<ast::Type, ParseError> {
+        let error = ParseErrorKind::ExpectedTypeParameter(constructor.0.describe());
+        self.expect(&Token::Symbol('<'), &error)?;
+
+        let sty = self.take_if_scalar_type()?.ok_or_else(|| ParseError {
+            span: self.peek_span().clone(),
+            kind: error.clone(),
+        })?;
+
+        let close = self.expect(&Token::Symbol('>'), &error)?;
+        let span = join_spans(&constructor.1, &close);
+
+        if sty.kind != ast::ScalarKind::F32 {
+            return Err(ParseError {
+                span,
+                kind: ParseErrorKind::TypeMatrixF32 {
+                    parameter: sty.span,
+                },
+            });
+        }
+
+        Ok(ast::Type::Matrix {
+            columns,
+            rows,
+            constructor_span: constructor.1,
+        })
+    }
+
+    fn parse_expr(&mut self) -> Result<ast::Expression, ParseError> {
         todo!()
     }
 
@@ -147,7 +265,7 @@ impl<'a> Context<'a> {
         &mut self,
         attr: error::Attribute,
         at: Span,
-        value: &mut Option<(u64, Span)>,
+        value: &mut Option<(u32, Span)>,
     ) -> Result<(), ParseError> {
         let error = ParseErrorKind::ExpectedAttrParameter(attr);
         self.expect(&Token::Symbol('('), &error)?;
