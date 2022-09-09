@@ -1,7 +1,7 @@
 //! Parsing errors.
 
-use crate::{ast::Span, error, lex::TokenError};
-
+use crate::{ast::Span, error};
+use crate::lex::{BracketPosition, TokenError};
 use std::borrow::Cow;
 
 #[derive(Debug)]
@@ -24,6 +24,11 @@ pub enum ParseErrorKind {
         help: Cow<'static, str>,
     },
     ExpectedStatement,
+    ExpectedTypeParameterBracket {
+        constructor: &'static str,
+        constructor_span: Span,
+        position: BracketPosition,
+    },
     ExpectedTypeParameter(&'static str),
     LexError(TokenError),
     MissingAttr(Attribute),
@@ -110,6 +115,26 @@ impl ParseError {
                     attribute.token(),
                 ));
                 "`{}` statement with missing attribute".into()
+            }
+            ParseErrorKind::ExpectedTypeParameterBracket {
+                constructor,
+                position,
+                ref constructor_span,
+            } => {
+                let description = position.angle_description();
+                builder.set_message(format!(
+                    "Expected {} for `{}` type parameter",
+                    description, constructor
+                ));
+                builder.add_label(
+                    ariadne::Label::new(constructor_span.clone())
+                        .with_message("type constructor"),
+                );
+                builder.set_help(format!(
+                    "Type parameters are surrounded by `<` and `>` characters, like `{}<f32>`.",
+                    constructor
+                ));
+                format!("expected {} bracket here", description).into()
             }
             ParseErrorKind::ExpectedTypeParameter(constructor) => {
                 builder.set_message(format!(

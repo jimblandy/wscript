@@ -1,7 +1,7 @@
 //! Parsing wscript.
 
 use crate::ast::{self, join_spans, Program, Span};
-use crate::lex::{Input, Token, TokenError};
+use crate::lex::{BracketPosition, Input, Token, TokenError};
 use error::{ParseError, ParseErrorKind};
 
 use std::borrow::Cow;
@@ -184,6 +184,10 @@ impl<'a> Context<'a> {
                 let mat_span = self.next()?;
                 self.parse_matrix_type(columns, rows, mat_span)
             }
+            Token::Array => {
+                let array_span = self.next()?;
+                self.parse_array_type(array_span)
+            }
             _ => todo!(),
         }
     }
@@ -206,15 +210,15 @@ impl<'a> Context<'a> {
         size: ast::VectorSize,
         constructor: (Token, Span),
     ) -> Result<ast::Type, ParseError> {
-        let error = ParseErrorKind::ExpectedTypeParameter(constructor.0.describe());
-        self.expect(&Token::Symbol('<'), &error)?;
+        self.expect_type_parameter_bracket(&constructor, BracketPosition::Open)?;
 
         let sty = self.take_if_scalar_type()?.ok_or_else(|| ParseError {
             span: self.peek_span().clone(),
-            kind: error.clone(),
+            kind: ParseErrorKind::ExpectedTypeParameter(constructor.0.description()),
         })?;
 
-        let close = self.expect(&Token::Symbol('>'), &error)?;
+        let close =
+            self.expect_type_parameter_bracket(&constructor, BracketPosition::Close)?;
         let span = join_spans(&constructor.1, &close);
 
         Ok(ast::Type {
@@ -233,15 +237,15 @@ impl<'a> Context<'a> {
         rows: ast::VectorSize,
         constructor: (Token, Span),
     ) -> Result<ast::Type, ParseError> {
-        let error = ParseErrorKind::ExpectedTypeParameter(constructor.0.describe());
-        self.expect(&Token::Symbol('<'), &error)?;
+        self.expect_type_parameter_bracket(&constructor, BracketPosition::Open)?;
 
         let sty = self.take_if_scalar_type()?.ok_or_else(|| ParseError {
             span: self.peek_span().clone(),
-            kind: error.clone(),
+            kind: ParseErrorKind::ExpectedTypeParameter(constructor.0.description()),
         })?;
 
-        let close = self.expect(&Token::Symbol('>'), &error)?;
+        let close =
+            self.expect_type_parameter_bracket(&constructor, BracketPosition::Close)?;
         let span = join_spans(&constructor.1, &close);
 
         if sty.kind != ast::ScalarKind::F32 {
@@ -254,12 +258,54 @@ impl<'a> Context<'a> {
         }
 
         Ok(ast::Type {
-            kind: ast::TypeKind::Matrix {
-                columns,
-                rows,
+            kind: ast::TypeKind::Matrix { columns, rows },
+            span,
+        })
+    }
+
+    fn parse_array_type(&mut self, constructor: (Token, Span)) -> Result<ast::Type, ParseError> {
+        self.expect_type_parameter_bracket(&constructor, BracketPosition::Open)?;
+
+        let element_type = Box::new(self.parse_type()?);
+
+        let length = if self.take_if(&Token::Symbol(','))?.is_some() {
+            let (length, _span) = self.expect_unsigned_integer(|| {
+                (
+                    "array length not an integer".into(),
+                    "The length of an array must be a non-negative integer.".into(),
+                )
+            })?;
+            Some(length as usize)
+        } else {
+            None
+        };
+
+        let close =
+            self.expect_type_parameter_bracket(&constructor, BracketPosition::Close)?;
+        let span = join_spans(&constructor.1, &close);
+
+        Ok(ast::Type {
+            kind: ast::TypeKind::Array {
+                element_type,
+                length,
             },
             span,
         })
+    }
+
+    fn expect_type_parameter_bracket(
+        &mut self,
+        constructor: &(Token, Span),
+        position: BracketPosition,
+    ) -> Result<Span, ParseError> {
+        self.expect(
+            &position.angle_token(),
+            &ParseErrorKind::ExpectedTypeParameterBracket {
+                constructor: constructor.0.description(),
+                constructor_span: constructor.1.clone(),
+                position,
+            },
+        )
     }
 
     fn parse_expr(&mut self) -> Result<ast::Expression, ParseError> {
@@ -313,7 +359,7 @@ fn check_duplicate_attr<T>(
 
 struct ScalarAndSpan {
     kind: ast::ScalarKind,
-    span: Span
+    span: Span,
 }
 
 impl From<ScalarAndSpan> for ast::Type {
