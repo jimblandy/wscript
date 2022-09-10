@@ -74,7 +74,7 @@ impl<'a> Context<'a> {
         if let Some(span) = self.take_if(expected)? {
             Ok(span)
         } else {
-            Err(self.next_unexpected(error.clone()))
+            Err(self.error_at_next(error.clone()))
         }
     }
 
@@ -90,14 +90,14 @@ impl<'a> Context<'a> {
         }
 
         let (message, help) = get_message_and_help();
-        Err(self.next_unexpected(ParseErrorKind::ExpectedInteger {
+        Err(self.error_at_next(ParseErrorKind::ExpectedInteger {
             unsigned: true,
             message,
             help,
         }))
     }
 
-    fn next_unexpected(&self, kind: ParseErrorKind) -> ParseError {
+    fn error_at_next(&self, kind: ParseErrorKind) -> ParseError {
         ParseError { span: self.next.span.clone(), kind }
     }
 
@@ -202,9 +202,8 @@ impl<'a> Context<'a> {
     ) -> Result<ast::Type, ParseError> {
         self.expect_type_parameter_bracket(&constructor, BracketPosition::Open)?;
 
-        let sty = self.take_if_scalar_type()?.ok_or_else(|| ParseError {
-            span: self.peek().span.clone(),
-            kind: ParseErrorKind::ExpectedTypeParameter(constructor.kind.description()),
+        let sty = self.take_if_scalar_type()?.ok_or_else(|| {
+            self.error_at_next(ParseErrorKind::ExpectedTypeParameter(constructor.kind.description()))
         })?;
 
         let close = self.expect_type_parameter_bracket(&constructor, BracketPosition::Close)?;
@@ -228,9 +227,8 @@ impl<'a> Context<'a> {
     ) -> Result<ast::Type, ParseError> {
         self.expect_type_parameter_bracket(&constructor, BracketPosition::Open)?;
 
-        let sty = self.take_if_scalar_type()?.ok_or_else(|| ParseError {
-            span: self.peek().span.clone(),
-            kind: ParseErrorKind::ExpectedTypeParameter(constructor.kind.description()),
+        let sty = self.take_if_scalar_type()?.ok_or_else(|| {
+            self.error_at_next(ParseErrorKind::ExpectedTypeParameter(constructor.kind.description()))
         })?;
 
         let close = self.expect_type_parameter_bracket(&constructor, BracketPosition::Close)?;
