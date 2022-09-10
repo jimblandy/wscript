@@ -1,7 +1,7 @@
 //! Parsing wscript.
 
 use crate::ast::{self, join_spans, Program, Span};
-use crate::lex::{BracketPosition, Input, TokenError, TokenKind};
+use crate::lex::{BracketPosition, Input, Token, TokenError, TokenKind};
 use error::{ParseError, ParseErrorKind};
 
 use std::borrow::Cow;
@@ -14,7 +14,7 @@ pub fn parse(source: &str, source_id: usize) -> Result<Program, ParseError> {
 
     let mut program = vec![];
     loop {
-        if let TokenKind::End = context.next {
+        if let TokenKind::End = context.next.kind {
             break;
         }
         program.push(context.parse_statement()?);
@@ -29,41 +29,30 @@ struct Context<'s> {
     /// The source we're parsing.
     input: Input<'s>,
 
-    /// The next token. At end of file, this is `Token::End`.
-    next: TokenKind,
-
-    /// The span of `next`.
-    next_span: Span,
+    /// The next token. At end of file, this is `TokenKind::End`.
+    next: Token,
 }
 
 impl<'a> Context<'a> {
     fn new(source: &'a str, source_id: usize) -> Result<Self, TokenError> {
         let mut input = Input::new(source, source_id);
-        let crate::lex::Token { kind: token, span } = input.get_token()?;
+        let token = input.get_token()?;
         Ok(Context {
             input,
             next: token,
-            next_span: span,
         })
     }
 
-    fn peek(&self) -> &TokenKind {
+    fn peek(&self) -> &Token {
         &self.next
     }
 
-    fn peek_span(&self) -> &Span {
-        &self.next_span
-    }
-
-    fn next(&mut self) -> Result<(TokenKind, Span), TokenError> {
-        let crate::lex::Token { kind: token, span } = self.input.get_token()?;
-        let token = std::mem::replace(&mut self.next, token);
-        let span = std::mem::replace(&mut self.next_span, span);
-        Ok((token, span))
+    fn next(&mut self) -> Result<Token, TokenError> {
+        Ok(std::mem::replace(&mut self.next, self.input.get_token()?))
     }
 
     fn start(&self) -> usize {
-        self.next_span.1.start
+        self.next.span.1.start
     }
 
     /// Return `Some(span)` if the next token is `token`, and consume it.
@@ -71,10 +60,10 @@ impl<'a> Context<'a> {
     /// If the next token isn't `token`, return `None` and leave the
     /// state of the input unchanged.
     fn take_if(&mut self, token: &TokenKind) -> Result<Option<Span>, ParseError> {
-        if self.peek() != token {
+        if &self.peek().kind != token {
             return Ok(None);
         }
-        let (_, span) = self.next()?;
+        let Token { span, .. } = self.next()?;
         Ok(Some(span))
     }
 
@@ -93,10 +82,10 @@ impl<'a> Context<'a> {
         &mut self,
         get_message_and_help: impl FnOnce() -> (Cow<'static, str>, Cow<'static, str>),
     ) -> Result<(u32, Span), ParseError> {
-        if let TokenKind::Number(n) = *self.peek() {
+        if let Token { kind: TokenKind::Number(n), .. } = *self.peek() {
             if n as u32 as f64 == n {
-                let (_, span) = self.next()?;
-                return Ok((n as u32, span));
+                let token = self.next()?;
+                return Ok((n as u32, token.span));
             }
         }
 
@@ -108,12 +97,8 @@ impl<'a> Context<'a> {
         }))
     }
 
-    fn error(&self, span: Span, kind: ParseErrorKind) -> ParseError {
-        ParseError { span, kind }
-    }
-
-    fn next_unexpected(&self, error: ParseErrorKind) -> ParseError {
-        self.error(self.next_span.clone(), error)
+    fn next_unexpected(&self, kind: ParseErrorKind) -> ParseError {
+        ParseError { span: self.next.span.clone(), kind }
     }
 
     fn parse_statement(&mut self) -> Result<ast::Statement, ParseError> {
@@ -175,25 +160,25 @@ impl<'a> Context<'a> {
             return Ok(ss.into());
         }
 
-        match *self.peek() {
+        match self.peek().kind {
             TokenKind::Vec(size) => {
-                let token_span = self.next()?;
-                self.parse_vector_type(size, token_span)
+                let token = self.next()?;
+                self.parse_vector_type(size, token)
             }
             TokenKind::Mat { columns, rows } => {
-                let mat_span = self.next()?;
-                self.parse_matrix_type(columns, rows, mat_span)
+                let token = self.next()?;
+                self.parse_matrix_type(columns, rows, token)
             }
             TokenKind::Array => {
-                let array_span = self.next()?;
-                self.parse_array_type(array_span)
+                let token = self.next()?;
+                self.parse_array_type(token)
             }
             _ => todo!(),
         }
     }
 
     fn take_if_scalar_type(&mut self) -> Result<Option<ScalarAndSpan>, ParseError> {
-        let kind = match *self.peek() {
+        let kind = match self.peek().kind {
             TokenKind::I32 => ast::ScalarKind::I32,
             TokenKind::U32 => ast::ScalarKind::U32,
             TokenKind::F32 => ast::ScalarKind::F32,
@@ -201,24 +186,24 @@ impl<'a> Context<'a> {
             _ => return Ok(None),
         };
 
-        let (_, span) = self.next()?;
-        Ok(Some(ScalarAndSpan { kind, span }))
+        let token = self.next()?;
+        Ok(Some(ScalarAndSpan { kind, span: token.span }))
     }
 
     fn parse_vector_type(
         &mut self,
         size: ast::VectorSize,
-        constructor: (TokenKind, Span),
+        constructor: Token,
     ) -> Result<ast::Type, ParseError> {
         self.expect_type_parameter_bracket(&constructor, BracketPosition::Open)?;
 
         let sty = self.take_if_scalar_type()?.ok_or_else(|| ParseError {
-            span: self.peek_span().clone(),
-            kind: ParseErrorKind::ExpectedTypeParameter(constructor.0.description()),
+            span: self.peek().span.clone(),
+            kind: ParseErrorKind::ExpectedTypeParameter(constructor.kind.description()),
         })?;
 
         let close = self.expect_type_parameter_bracket(&constructor, BracketPosition::Close)?;
-        let span = join_spans(&constructor.1, &close);
+        let span = join_spans(&constructor.span, &close);
 
         Ok(ast::Type {
             kind: ast::TypeKind::Vector {
@@ -234,17 +219,17 @@ impl<'a> Context<'a> {
         &mut self,
         columns: ast::VectorSize,
         rows: ast::VectorSize,
-        constructor: (TokenKind, Span),
+        constructor: Token,
     ) -> Result<ast::Type, ParseError> {
         self.expect_type_parameter_bracket(&constructor, BracketPosition::Open)?;
 
         let sty = self.take_if_scalar_type()?.ok_or_else(|| ParseError {
-            span: self.peek_span().clone(),
-            kind: ParseErrorKind::ExpectedTypeParameter(constructor.0.description()),
+            span: self.peek().span.clone(),
+            kind: ParseErrorKind::ExpectedTypeParameter(constructor.kind.description()),
         })?;
 
         let close = self.expect_type_parameter_bracket(&constructor, BracketPosition::Close)?;
-        let span = join_spans(&constructor.1, &close);
+        let span = join_spans(&constructor.span, &close);
 
         if sty.kind != ast::ScalarKind::F32 {
             return Err(ParseError {
@@ -263,7 +248,7 @@ impl<'a> Context<'a> {
 
     fn parse_array_type(
         &mut self,
-        constructor: (TokenKind, Span),
+        constructor: Token,
     ) -> Result<ast::Type, ParseError> {
         self.expect_type_parameter_bracket(&constructor, BracketPosition::Open)?;
 
@@ -282,7 +267,7 @@ impl<'a> Context<'a> {
         };
 
         let close = self.expect_type_parameter_bracket(&constructor, BracketPosition::Close)?;
-        let span = join_spans(&constructor.1, &close);
+        let span = join_spans(&constructor.span, &close);
 
         Ok(ast::Type {
             kind: ast::TypeKind::Array {
@@ -295,14 +280,14 @@ impl<'a> Context<'a> {
 
     fn expect_type_parameter_bracket(
         &mut self,
-        constructor: &(TokenKind, Span),
+        constructor: &Token,
         position: BracketPosition,
     ) -> Result<Span, ParseError> {
         self.expect(
             &position.angle_token(),
             &ParseErrorKind::ExpectedTypeParameterBracket {
-                constructor: constructor.0.description(),
-                constructor_span: constructor.1.clone(),
+                constructor: constructor.kind.description(),
+                constructor_span: constructor.span.clone(),
                 position,
             },
         )
