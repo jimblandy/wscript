@@ -514,55 +514,6 @@ impl TokenKind {
     }
 }
 
-impl TokenError {
-    pub fn build_report(&self, builder: &mut crate::error::ReportBuilder) -> &'static str {
-        use ariadne::Label;
-        match self.kind {
-            TokenErrorKind::UnrecognizedWord => {
-                builder.set_message("word is not a recognized part of the wscript vocabulary");
-                "unrecognized word"
-            }
-            TokenErrorKind::JunkAfterCodeBlockStart(ref junk) => {
-                builder.set_message(
-                    r#"non-whitespace characters following a `"""` code block introducer"#,
-                );
-                builder.add_label(
-                    Label::new(junk.clone()).with_message("this character isn't allowed here "),
-                );
-                builder.set_help(
-                    r#"The `"""` that starts a code block must not have anything else following it on the line."#
-                );
-                "code block is introduced here"
-            }
-            TokenErrorKind::NumberOutOfRange => {
-                builder.set_help(
-                    "wscript numbers must be representable as a 64-bit IEEE double value.",
-                );
-                "number too large to represent"
-            }
-            TokenErrorKind::TabInCodeBlock { ref tab, part } => {
-                builder.add_label(
-                    Label::new(tab.clone()).with_message("this tab character is not allowed"),
-                );
-                builder.set_help(
-                    "Tabs have no well-defined width, so the lines that begin and end code\n\
-                     blocks, as well as the lines that make up its content, must be indented\n\
-                     with spaces only.",
-                );
-
-                match part {
-                    CodeBlockPart::Introducing => {
-                        "tab character in indentation of line introducing code block"
-                    }
-                    CodeBlockPart::Body => {
-                        "tab character in indentation of the body of the code block"
-                    }
-                }
-            }
-        }
-    }
-}
-
 impl BracketPosition {
     pub fn angle_token(self) -> TokenKind {
         TokenKind::Symbol(self.angle_char())
