@@ -1,7 +1,7 @@
 //! Parsing wscript.
 
 use crate::ast::{self, join_spans, Program, Span};
-use crate::lex::{BracketPosition, Input, TokenKind, TokenError};
+use crate::lex::{BracketPosition, Input, TokenError, TokenKind};
 use error::{ParseError, ParseErrorKind};
 
 use std::borrow::Cow;
@@ -217,8 +217,7 @@ impl<'a> Context<'a> {
             kind: ParseErrorKind::ExpectedTypeParameter(constructor.0.description()),
         })?;
 
-        let close =
-            self.expect_type_parameter_bracket(&constructor, BracketPosition::Close)?;
+        let close = self.expect_type_parameter_bracket(&constructor, BracketPosition::Close)?;
         let span = join_spans(&constructor.1, &close);
 
         Ok(ast::Type {
@@ -244,8 +243,7 @@ impl<'a> Context<'a> {
             kind: ParseErrorKind::ExpectedTypeParameter(constructor.0.description()),
         })?;
 
-        let close =
-            self.expect_type_parameter_bracket(&constructor, BracketPosition::Close)?;
+        let close = self.expect_type_parameter_bracket(&constructor, BracketPosition::Close)?;
         let span = join_spans(&constructor.1, &close);
 
         if sty.kind != ast::ScalarKind::F32 {
@@ -263,7 +261,10 @@ impl<'a> Context<'a> {
         })
     }
 
-    fn parse_array_type(&mut self, constructor: (TokenKind, Span)) -> Result<ast::Type, ParseError> {
+    fn parse_array_type(
+        &mut self,
+        constructor: (TokenKind, Span),
+    ) -> Result<ast::Type, ParseError> {
         self.expect_type_parameter_bracket(&constructor, BracketPosition::Open)?;
 
         let element_type = Box::new(self.parse_type()?);
@@ -280,8 +281,7 @@ impl<'a> Context<'a> {
             None
         };
 
-        let close =
-            self.expect_type_parameter_bracket(&constructor, BracketPosition::Close)?;
+        let close = self.expect_type_parameter_bracket(&constructor, BracketPosition::Close)?;
         let span = join_spans(&constructor.1, &close);
 
         Ok(ast::Type {

@@ -1,7 +1,7 @@
 //! Parsing errors.
 
-use crate::{ast::Span, error};
 use crate::lex::{BracketPosition, TokenError};
+use crate::{ast::Span, error};
 use std::borrow::Cow;
 
 #[derive(Debug)]
@@ -127,8 +127,7 @@ impl ParseError {
                     description, constructor
                 ));
                 builder.add_label(
-                    ariadne::Label::new(constructor_span.clone())
-                        .with_message("type constructor"),
+                    ariadne::Label::new(constructor_span.clone()).with_message("type constructor"),
                 );
                 builder.set_help(format!(
                     "Type parameters are surrounded by `<` and `>` characters, like `{}<f32>`.",
