@@ -1,3 +1,5 @@
+#![doc = include_str!("../README.md")]
+
 #![allow(dead_code)]
 use anyhow::{Context, Result};
 use argh::FromArgs;
