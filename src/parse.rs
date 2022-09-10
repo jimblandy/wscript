@@ -102,10 +102,15 @@ impl<'a> Context<'a> {
     }
 
     fn parse_statement(&mut self) -> Result<ast::Statement, ParseError> {
-        if let Some(span) = self.take_if(&TokenKind::Buffer)? {
-            self.parse_buffer(span)
-        } else {
-            Err(self.next_unexpected(ParseErrorKind::ExpectedStatement))
+        match *self.peek() {
+            Token { kind: TokenKind::Buffer, .. } => {
+                let Token { span, .. } = self.next()?;
+                self.parse_buffer(span)
+            }
+            _ => {
+                let Token { span, .. } = self.next()?;
+                Err(ParseError { span, kind: ParseErrorKind::ExpectedStatement })
+            }
         }
     }
 
