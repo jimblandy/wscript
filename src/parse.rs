@@ -1,7 +1,7 @@
 //! Parsing wscript.
 
 use crate::ast::{self, join_spans, Program, Span};
-use crate::lex::{BracketPosition, Input, Token, TokenError};
+use crate::lex::{BracketPosition, Input, TokenKind, TokenError};
 use error::{ParseError, ParseErrorKind};
 
 use std::borrow::Cow;
@@ -14,7 +14,7 @@ pub fn parse(source: &str, source_id: usize) -> Result<Program, ParseError> {
 
     let mut program = vec![];
     loop {
-        if let Token::End = context.next {
+        if let TokenKind::End = context.next {
             break;
         }
         program.push(context.parse_statement()?);
@@ -30,7 +30,7 @@ struct Context<'s> {
     input: Input<'s>,
 
     /// The next token. At end of file, this is `Token::End`.
-    next: Token,
+    next: TokenKind,
 
     /// The span of `next`.
     next_span: Span,
@@ -39,7 +39,7 @@ struct Context<'s> {
 impl<'a> Context<'a> {
     fn new(source: &'a str, source_id: usize) -> Result<Self, TokenError> {
         let mut input = Input::new(source, source_id);
-        let crate::lex::TokenOk { token, span } = input.get_token()?;
+        let crate::lex::Token { kind: token, span } = input.get_token()?;
         Ok(Context {
             input,
             next: token,
@@ -47,7 +47,7 @@ impl<'a> Context<'a> {
         })
     }
 
-    fn peek(&self) -> &Token {
+    fn peek(&self) -> &TokenKind {
         &self.next
     }
 
@@ -55,8 +55,8 @@ impl<'a> Context<'a> {
         &self.next_span
     }
 
-    fn next(&mut self) -> Result<(Token, Span), TokenError> {
-        let crate::lex::TokenOk { token, span } = self.input.get_token()?;
+    fn next(&mut self) -> Result<(TokenKind, Span), TokenError> {
+        let crate::lex::Token { kind: token, span } = self.input.get_token()?;
         let token = std::mem::replace(&mut self.next, token);
         let span = std::mem::replace(&mut self.next_span, span);
         Ok((token, span))
@@ -70,7 +70,7 @@ impl<'a> Context<'a> {
     ///
     /// If the next token isn't `token`, return `None` and leave the
     /// state of the input unchanged.
-    fn take_if(&mut self, token: &Token) -> Result<Option<Span>, ParseError> {
+    fn take_if(&mut self, token: &TokenKind) -> Result<Option<Span>, ParseError> {
         if self.peek() != token {
             return Ok(None);
         }
@@ -81,7 +81,7 @@ impl<'a> Context<'a> {
     /// Require the next token to be `token`, and consume it.
     ///
     /// If something else is next, then complain about it using `error`.
-    fn expect(&mut self, expected: &Token, error: &ParseErrorKind) -> Result<Span, ParseError> {
+    fn expect(&mut self, expected: &TokenKind, error: &ParseErrorKind) -> Result<Span, ParseError> {
         if let Some(span) = self.take_if(expected)? {
             Ok(span)
         } else {
@@ -93,7 +93,7 @@ impl<'a> Context<'a> {
         &mut self,
         get_message_and_help: impl FnOnce() -> (Cow<'static, str>, Cow<'static, str>),
     ) -> Result<(u32, Span), ParseError> {
-        if let Token::Number(n) = *self.peek() {
+        if let TokenKind::Number(n) = *self.peek() {
             if n as u32 as f64 == n {
                 let (_, span) = self.next()?;
                 return Ok((n as u32, span));
@@ -117,7 +117,7 @@ impl<'a> Context<'a> {
     }
 
     fn parse_statement(&mut self) -> Result<ast::Statement, ParseError> {
-        if let Some(span) = self.take_if(&Token::Buffer)? {
+        if let Some(span) = self.take_if(&TokenKind::Buffer)? {
             self.parse_buffer(span)
         } else {
             Err(self.next_unexpected(ParseErrorKind::ExpectedStatement))
@@ -131,10 +131,10 @@ impl<'a> Context<'a> {
         let mut group: Option<(u32, Span)> = None;
         let mut binding: Option<(u32, Span)> = None;
 
-        while let Some(at) = self.take_if(&Token::Symbol('@'))? {
-            if self.take_if(&Token::Group)?.is_some() {
+        while let Some(at) = self.take_if(&TokenKind::Symbol('@'))? {
+            if self.take_if(&TokenKind::Group)?.is_some() {
                 self.parse_unsigned_attribute(At::Buffer(Ba::Group), at, &mut group)?;
-            } else if self.take_if(&Token::Binding)?.is_some() {
+            } else if self.take_if(&TokenKind::Binding)?.is_some() {
                 self.parse_unsigned_attribute(At::Buffer(Ba::Binding), at, &mut binding)?;
             }
         }
@@ -151,14 +151,14 @@ impl<'a> Context<'a> {
         let binding = ast::Binding { group, binding };
 
         self.expect(
-            &Token::Symbol(':'),
+            &TokenKind::Symbol(':'),
             &ParseErrorKind::ExpectedBufferAttributeOrType,
         )?;
 
         let ty = self.parse_type()?;
 
         self.expect(
-            &Token::Symbol('='),
+            &TokenKind::Symbol('='),
             &ParseErrorKind::ExpectedBufferAttributeOrType,
         )?;
 
@@ -176,15 +176,15 @@ impl<'a> Context<'a> {
         }
 
         match *self.peek() {
-            Token::Vec(size) => {
+            TokenKind::Vec(size) => {
                 let token_span = self.next()?;
                 self.parse_vector_type(size, token_span)
             }
-            Token::Mat { columns, rows } => {
+            TokenKind::Mat { columns, rows } => {
                 let mat_span = self.next()?;
                 self.parse_matrix_type(columns, rows, mat_span)
             }
-            Token::Array => {
+            TokenKind::Array => {
                 let array_span = self.next()?;
                 self.parse_array_type(array_span)
             }
@@ -194,10 +194,10 @@ impl<'a> Context<'a> {
 
     fn take_if_scalar_type(&mut self) -> Result<Option<ScalarAndSpan>, ParseError> {
         let kind = match *self.peek() {
-            Token::I32 => ast::ScalarKind::I32,
-            Token::U32 => ast::ScalarKind::U32,
-            Token::F32 => ast::ScalarKind::F32,
-            Token::Bool => ast::ScalarKind::Bool,
+            TokenKind::I32 => ast::ScalarKind::I32,
+            TokenKind::U32 => ast::ScalarKind::U32,
+            TokenKind::F32 => ast::ScalarKind::F32,
+            TokenKind::Bool => ast::ScalarKind::Bool,
             _ => return Ok(None),
         };
 
@@ -208,7 +208,7 @@ impl<'a> Context<'a> {
     fn parse_vector_type(
         &mut self,
         size: ast::VectorSize,
-        constructor: (Token, Span),
+        constructor: (TokenKind, Span),
     ) -> Result<ast::Type, ParseError> {
         self.expect_type_parameter_bracket(&constructor, BracketPosition::Open)?;
 
@@ -235,7 +235,7 @@ impl<'a> Context<'a> {
         &mut self,
         columns: ast::VectorSize,
         rows: ast::VectorSize,
-        constructor: (Token, Span),
+        constructor: (TokenKind, Span),
     ) -> Result<ast::Type, ParseError> {
         self.expect_type_parameter_bracket(&constructor, BracketPosition::Open)?;
 
@@ -263,12 +263,12 @@ impl<'a> Context<'a> {
         })
     }
 
-    fn parse_array_type(&mut self, constructor: (Token, Span)) -> Result<ast::Type, ParseError> {
+    fn parse_array_type(&mut self, constructor: (TokenKind, Span)) -> Result<ast::Type, ParseError> {
         self.expect_type_parameter_bracket(&constructor, BracketPosition::Open)?;
 
         let element_type = Box::new(self.parse_type()?);
 
-        let length = if self.take_if(&Token::Symbol(','))?.is_some() {
+        let length = if self.take_if(&TokenKind::Symbol(','))?.is_some() {
             let (length, _span) = self.expect_unsigned_integer(|| {
                 (
                     "array length not an integer".into(),
@@ -295,7 +295,7 @@ impl<'a> Context<'a> {
 
     fn expect_type_parameter_bracket(
         &mut self,
-        constructor: &(Token, Span),
+        constructor: &(TokenKind, Span),
         position: BracketPosition,
     ) -> Result<Span, ParseError> {
         self.expect(
@@ -319,7 +319,7 @@ impl<'a> Context<'a> {
         value: &mut Option<(u32, Span)>,
     ) -> Result<(), ParseError> {
         let error = ParseErrorKind::ExpectedAttrParameter(attr);
-        self.expect(&Token::Symbol('('), &error)?;
+        self.expect(&TokenKind::Symbol('('), &error)?;
         let mut new = self.expect_unsigned_integer(|| {
             let message = format!(
                 "the {} must be a positive integer or zero",
@@ -331,7 +331,7 @@ impl<'a> Context<'a> {
             );
             (message.into(), help.into())
         })?;
-        let close = self.expect(&Token::Symbol(')'), &error)?;
+        let close = self.expect(&TokenKind::Symbol(')'), &error)?;
         new.1 = join_spans(&at, &close);
         check_duplicate_attr(value, &new, attr)?;
         *value = Some(new);

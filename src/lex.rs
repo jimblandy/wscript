@@ -10,7 +10,13 @@ use std::str::FromStr;
 mod tests;
 
 #[derive(Debug, PartialEq)]
-pub enum Token {
+pub struct Token {
+    pub kind: TokenKind,
+    pub span: Span,
+}
+
+#[derive(Debug, PartialEq)]
+pub enum TokenKind {
     End,
     Symbol(char),
     Number(f64),
@@ -40,13 +46,7 @@ pub enum Token {
     },
 }
 
-type TokenResult = std::result::Result<TokenOk, TokenError>;
-
-#[derive(Debug, PartialEq)]
-pub struct TokenOk {
-    pub token: Token,
-    pub span: Span,
-}
+type TokenResult = std::result::Result<Token, TokenError>;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct TokenError {
@@ -134,7 +134,7 @@ impl<'i> Input<'i> {
             token_start = whole_len - self.rest.len();
             if self.rest.is_empty() {
                 // End of input.
-                break Token::End;
+                break TokenKind::End;
             } else if let Some(comment) = self.rest.strip_prefix("//") {
                 // Comment until end of line.
                 if let Some((_text, end)) = comment.split_once('\n') {
@@ -145,7 +145,7 @@ impl<'i> Input<'i> {
             } else if let Some(rest) = self.rest.strip_prefix("..") {
                 // Range operator.
                 self.rest = rest;
-                break Token::Range;
+                break TokenKind::Range;
             } else if let Some(rest) = self.rest.strip_prefix(r#"""""#) {
                 return self.get_source_block(rest);
             } else if self.rest.starts_with(|ch: char| ch.is_ascii_digit()) {
@@ -157,14 +157,14 @@ impl<'i> Input<'i> {
                 let mut chars = self.rest.chars();
                 let first = chars.next().unwrap();
                 self.rest = chars.as_str();
-                break Token::Symbol(first);
+                break TokenKind::Symbol(first);
             }
         };
 
         let token_end = whole_len - self.rest.len();
 
-        Ok(TokenOk {
-            token,
+        Ok(Token {
+            kind: token,
             span: (self.source_id, token_start..token_end),
         })
     }
@@ -214,8 +214,8 @@ impl<'i> Input<'i> {
                 span,
             })
         } else {
-            Ok(TokenOk {
-                token: Token::Number(n),
+            Ok(Token {
+                kind: TokenKind::Number(n),
                 span,
             })
         }
@@ -229,52 +229,52 @@ impl<'i> Input<'i> {
 
         use VectorSize::*;
         let token = match ident {
-            "buffer" => Token::Buffer,
-            "dispatch" => Token::Dispatch,
-            "check" => Token::Check,
-            "group" => Token::Group,
-            "binding" => Token::Binding,
-            "array" => Token::Array,
-            "f32" => Token::F32,
-            "i32" => Token::I32,
-            "u32" => Token::U32,
-            "bool" => Token::Bool,
-            "vec2" => Token::Vec(Vec2),
-            "vec3" => Token::Vec(Vec3),
-            "vec4" => Token::Vec(Vec4),
-            "mat2x2" => Token::Mat {
+            "buffer" => TokenKind::Buffer,
+            "dispatch" => TokenKind::Dispatch,
+            "check" => TokenKind::Check,
+            "group" => TokenKind::Group,
+            "binding" => TokenKind::Binding,
+            "array" => TokenKind::Array,
+            "f32" => TokenKind::F32,
+            "i32" => TokenKind::I32,
+            "u32" => TokenKind::U32,
+            "bool" => TokenKind::Bool,
+            "vec2" => TokenKind::Vec(Vec2),
+            "vec3" => TokenKind::Vec(Vec3),
+            "vec4" => TokenKind::Vec(Vec4),
+            "mat2x2" => TokenKind::Mat {
                 columns: Vec2,
                 rows: Vec2,
             },
-            "mat2x3" => Token::Mat {
+            "mat2x3" => TokenKind::Mat {
                 columns: Vec2,
                 rows: Vec3,
             },
-            "mat2x4" => Token::Mat {
+            "mat2x4" => TokenKind::Mat {
                 columns: Vec2,
                 rows: Vec4,
             },
-            "mat3x2" => Token::Mat {
+            "mat3x2" => TokenKind::Mat {
                 columns: Vec3,
                 rows: Vec2,
             },
-            "mat3x3" => Token::Mat {
+            "mat3x3" => TokenKind::Mat {
                 columns: Vec3,
                 rows: Vec3,
             },
-            "mat3x4" => Token::Mat {
+            "mat3x4" => TokenKind::Mat {
                 columns: Vec3,
                 rows: Vec4,
             },
-            "mat4x2" => Token::Mat {
+            "mat4x2" => TokenKind::Mat {
                 columns: Vec4,
                 rows: Vec2,
             },
-            "mat4x3" => Token::Mat {
+            "mat4x3" => TokenKind::Mat {
                 columns: Vec4,
                 rows: Vec3,
             },
-            "mat4x4" => Token::Mat {
+            "mat4x4" => TokenKind::Mat {
                 columns: Vec4,
                 rows: Vec4,
             },
@@ -286,7 +286,7 @@ impl<'i> Input<'i> {
             }
         };
 
-        Ok(TokenOk { token, span })
+        Ok(Token { kind: token, span })
     }
 
     /// Parse a source block.
@@ -421,9 +421,9 @@ impl<'i> Input<'i> {
             code.push('\n');
         }
 
-        Ok(TokenOk {
+        Ok(Token {
             span,
-            token: Token::Code(code),
+            kind: TokenKind::Code(code),
         })
     }
 
@@ -452,61 +452,61 @@ impl<'i> Input<'i> {
     }
 }
 
-impl Token {
+impl TokenKind {
     pub fn description(&self) -> &'static str {
         use VectorSize as Vs;
         match *self {
-            Token::End => "end of file",
-            Token::Symbol(_) => "a symbol",
-            Token::Number(_) => "a number",
-            Token::Range => "a range",
-            Token::Code(_) => "a code block",
-            Token::Buffer => "buffer",
-            Token::Dispatch => "dispatch",
-            Token::Check => "check",
-            Token::Group => "group",
-            Token::Binding => "binding",
-            Token::Array => "array",
-            Token::F32 => "f32",
-            Token::I32 => "i32",
-            Token::U32 => "u32",
-            Token::Bool => "bool",
-            Token::Vec(Vs::Vec2) => "vec2",
-            Token::Vec(Vs::Vec3) => "vec3",
-            Token::Vec(Vs::Vec4) => "vec4",
-            Token::Mat {
+            TokenKind::End => "end of file",
+            TokenKind::Symbol(_) => "a symbol",
+            TokenKind::Number(_) => "a number",
+            TokenKind::Range => "a range",
+            TokenKind::Code(_) => "a code block",
+            TokenKind::Buffer => "buffer",
+            TokenKind::Dispatch => "dispatch",
+            TokenKind::Check => "check",
+            TokenKind::Group => "group",
+            TokenKind::Binding => "binding",
+            TokenKind::Array => "array",
+            TokenKind::F32 => "f32",
+            TokenKind::I32 => "i32",
+            TokenKind::U32 => "u32",
+            TokenKind::Bool => "bool",
+            TokenKind::Vec(Vs::Vec2) => "vec2",
+            TokenKind::Vec(Vs::Vec3) => "vec3",
+            TokenKind::Vec(Vs::Vec4) => "vec4",
+            TokenKind::Mat {
                 columns: Vs::Vec2,
                 rows: Vs::Vec2,
             } => "mat2x2",
-            Token::Mat {
+            TokenKind::Mat {
                 columns: Vs::Vec3,
                 rows: Vs::Vec2,
             } => "mat3x2",
-            Token::Mat {
+            TokenKind::Mat {
                 columns: Vs::Vec4,
                 rows: Vs::Vec2,
             } => "mat4x2",
-            Token::Mat {
+            TokenKind::Mat {
                 columns: Vs::Vec2,
                 rows: Vs::Vec3,
             } => "mat2x3",
-            Token::Mat {
+            TokenKind::Mat {
                 columns: Vs::Vec3,
                 rows: Vs::Vec3,
             } => "mat3x3",
-            Token::Mat {
+            TokenKind::Mat {
                 columns: Vs::Vec4,
                 rows: Vs::Vec3,
             } => "mat4x3",
-            Token::Mat {
+            TokenKind::Mat {
                 columns: Vs::Vec2,
                 rows: Vs::Vec4,
             } => "mat2x4",
-            Token::Mat {
+            TokenKind::Mat {
                 columns: Vs::Vec3,
                 rows: Vs::Vec4,
             } => "mat3x4",
-            Token::Mat {
+            TokenKind::Mat {
                 columns: Vs::Vec4,
                 rows: Vs::Vec4,
             } => "mat4x4",
@@ -564,8 +564,8 @@ impl TokenError {
 }
 
 impl BracketPosition {
-    pub fn angle_token(self) -> Token {
-        Token::Symbol(self.angle_char())
+    pub fn angle_token(self) -> TokenKind {
+        TokenKind::Symbol(self.angle_char())
     }
 
     pub fn angle_char(self) -> char {
