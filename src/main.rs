@@ -1,15 +1,12 @@
 #![doc = include_str!("../README.md")]
-
 #![allow(dead_code)]
+
+use wscript::{error, parse};
+
 use anyhow::{Context, Result};
 use argh::FromArgs;
 
 use std::{fs, path};
-
-mod ast;
-mod error;
-mod lex;
-mod parse;
 
 #[derive(FromArgs)]
 /// Execute a `wgpu` script.

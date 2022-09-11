@@ -1,0 +1,11 @@
+Error: Expected closing '>' for `array` type parameter
+   ╭─[errors/type-array-args-too-many.ws:1:52]
+   │
+ 1 │ buffer @group(1) @binding(2) : array<vec4<f32>, 100, 200> = {}
+   ·                                ──┬──               ┬  
+   ·                                  ╰──────────────────── type constructor
+   ·                                                    │  
+   ·                                                    ╰── expected closing '>' bracket here
+   · 
+   · Help: Type parameters are surrounded by `<` and `>` characters, like `array<f32>`.
+───╯

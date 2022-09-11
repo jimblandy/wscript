@@ -50,11 +50,16 @@ pub enum BufferAttribute {
 
 impl ParseError {
     pub fn report(&self) -> error::Report {
+        self.report_with_config(ariadne::Config::default())
+    }
+
+    pub fn report_with_config(&self, config: ariadne::Config) -> error::Report {
         use ariadne::{Report, ReportKind};
         use Attribute as At;
 
         let (source_id, range) = self.span.clone();
-        let mut builder = Report::build(ReportKind::Error, source_id, range.start);
+        let mut builder = Report::build(ReportKind::Error, source_id, range.start)
+            .with_config(config);
         let label: Cow<'static, str> = match self.kind {
             ParseErrorKind::DuplicateAttribute { attr, ref prior } => {
                 builder.set_message(format!(
