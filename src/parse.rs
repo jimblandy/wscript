@@ -7,6 +7,8 @@ use error::{ParseError, ParseErrorKind};
 use std::borrow::Cow;
 
 mod error;
+
+#[cfg(test)]
 mod tests;
 
 pub fn parse(source: &str, source_id: usize) -> Result<Program, ParseError> {
