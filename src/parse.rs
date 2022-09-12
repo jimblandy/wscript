@@ -39,10 +39,7 @@ impl<'a> Context<'a> {
     fn new(source: &'a str, source_id: usize) -> Result<Self, TokenError> {
         let mut input = Input::new(source, source_id);
         let token = input.get_token()?;
-        Ok(Context {
-            input,
-            next: token,
-        })
+        Ok(Context { input, next: token })
     }
 
     fn peek(&self) -> &Token {
@@ -84,7 +81,11 @@ impl<'a> Context<'a> {
         &mut self,
         get_message_and_help: impl FnOnce() -> (Cow<'static, str>, Cow<'static, str>),
     ) -> Result<(u32, Span), ParseError> {
-        if let Token { kind: TokenKind::Number(n), .. } = *self.peek() {
+        if let Token {
+            kind: TokenKind::Number(n),
+            ..
+        } = *self.peek()
+        {
             if n as u32 as f64 == n {
                 let token = self.next()?;
                 return Ok((n as u32, token.span));
@@ -100,18 +101,27 @@ impl<'a> Context<'a> {
     }
 
     fn error_at_next(&self, kind: ParseErrorKind) -> ParseError {
-        ParseError { span: self.next.span.clone(), kind }
+        ParseError {
+            span: self.next.span.clone(),
+            kind,
+        }
     }
 
     fn parse_statement(&mut self) -> Result<ast::Statement, ParseError> {
         match *self.peek() {
-            Token { kind: TokenKind::Buffer, .. } => {
+            Token {
+                kind: TokenKind::Buffer,
+                ..
+            } => {
                 let Token { span, .. } = self.next()?;
                 self.parse_buffer(span)
             }
             _ => {
                 let Token { span, .. } = self.next()?;
-                Err(ParseError { span, kind: ParseErrorKind::ExpectedStatement })
+                Err(ParseError {
+                    span,
+                    kind: ParseErrorKind::ExpectedStatement,
+                })
             }
         }
     }
@@ -194,7 +204,10 @@ impl<'a> Context<'a> {
         };
 
         let token = self.next()?;
-        Ok(Some(ScalarAndSpan { kind, span: token.span }))
+        Ok(Some(ScalarAndSpan {
+            kind,
+            span: token.span,
+        }))
     }
 
     fn parse_vector_type(
@@ -205,7 +218,9 @@ impl<'a> Context<'a> {
         self.expect_type_parameter_bracket(&constructor, BracketPosition::Open)?;
 
         let sty = self.take_if_scalar_type()?.ok_or_else(|| {
-            self.error_at_next(ParseErrorKind::ExpectedTypeParameter(constructor.kind.description()))
+            self.error_at_next(ParseErrorKind::ExpectedTypeParameter(
+                constructor.kind.description(),
+            ))
         })?;
 
         let close = self.expect_type_parameter_bracket(&constructor, BracketPosition::Close)?;
@@ -230,7 +245,9 @@ impl<'a> Context<'a> {
         self.expect_type_parameter_bracket(&constructor, BracketPosition::Open)?;
 
         let sty = self.take_if_scalar_type()?.ok_or_else(|| {
-            self.error_at_next(ParseErrorKind::ExpectedTypeParameter(constructor.kind.description()))
+            self.error_at_next(ParseErrorKind::ExpectedTypeParameter(
+                constructor.kind.description(),
+            ))
         })?;
 
         let close = self.expect_type_parameter_bracket(&constructor, BracketPosition::Close)?;
@@ -251,10 +268,7 @@ impl<'a> Context<'a> {
         })
     }
 
-    fn parse_array_type(
-        &mut self,
-        constructor: Token,
-    ) -> Result<ast::Type, ParseError> {
+    fn parse_array_type(&mut self, constructor: Token) -> Result<ast::Type, ParseError> {
         self.expect_type_parameter_bracket(&constructor, BracketPosition::Open)?;
 
         let element_type = Box::new(self.parse_type()?);

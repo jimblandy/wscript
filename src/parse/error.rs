@@ -58,8 +58,8 @@ impl ParseError {
         use Attribute as At;
 
         let (source_id, range) = self.span.clone();
-        let mut builder = Report::build(ReportKind::Error, source_id, range.start)
-            .with_config(config);
+        let mut builder =
+            Report::build(ReportKind::Error, source_id, range.start).with_config(config);
         let label: Cow<'static, str> = match self.kind {
             ParseErrorKind::DuplicateAttribute { attr, ref prior } => {
                 builder.set_message(format!(
@@ -179,8 +179,8 @@ impl From<TokenError> for ParseError {
 
 impl TokenError {
     pub fn build_report(&self, builder: &mut crate::error::ReportBuilder) -> &'static str {
-        use ariadne::Label;
         use crate::lex::TokenErrorKind as Tek;
+        use ariadne::Label;
 
         match self.kind {
             Tek::UnrecognizedWord => {
