@@ -52,7 +52,20 @@ fn ariadne(path: &path::Path) -> Result<()> {
                 .write(cache, &mut buffer)
                 .unwrap();
             let report = String::from_utf8(buffer).unwrap();
-            assert_eq!(report, expected_ariadne);
+
+            if report != expected_ariadne {
+                println!("error message for `{}` doesn't match expectation", path.display());
+                let diff = similar::TextDiff::from_lines(&expected_ariadne, &report);
+                for change in diff.iter_all_changes() {
+                    let sign = match change.tag() {
+                        similar::ChangeTag::Equal => ' ',
+                        similar::ChangeTag::Delete => '-',
+                        similar::ChangeTag::Insert => '+'
+                    };
+                    print!("{}{}", sign, change);
+                }
+                panic!("error message doesn't match expectation: {}", path.display());
+            }
         }
     }
 
