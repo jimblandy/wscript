@@ -1,0 +1,9 @@
+Error: array length not an integer
+   ╭─[type-array-length-not-integer.ws:1:49]
+   │
+ 1 │ buffer @group(1) @binding(2) : array<vec4<f32>, 1.5> = {}
+   ·                                                 ─┬─  
+   ·                                                  ╰─── expected a positive integer or zero here
+   · 
+   · Help: The length of an array must be a non-negative integer.
+───╯

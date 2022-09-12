@@ -34,7 +34,9 @@ fn ariadne(path: &path::Path) -> Result<()> {
         )
     });
 
-    let source_id = cache.insert(path.to_owned(), &script);
+    // Don't include the directory name in the error message.
+    let file_name: path::PathBuf = path.file_name().unwrap().to_owned().into();
+    let source_id = cache.insert(file_name, &script);
 
     match wscript::parse::parse(&script, source_id) {
         Ok(_) => panic!(
