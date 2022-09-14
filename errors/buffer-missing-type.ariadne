@@ -1,0 +1,12 @@
+Error: Expected type in {}
+   ╭─[buffer-missing-type.ws:1:31]
+   │
+ 1 │ buffer @group(0) @binding(1): 42
+   · ───┬──                        ─┬  
+   ·    ╰────────────────────────────── this `buffer` statement lacks a type
+   ·                                │  
+   ·                                ╰── expected a type here
+   · 
+   · Help: A `buffer` statement has the form: `buffer ATTRIBUTES : TYPE = VALUE`.
+For example: `buffer @group(0) @binding(3): u32 = 1729`
+───╯

@@ -24,6 +24,11 @@ pub enum ParseErrorKind {
         help: Cow<'static, str>,
     },
     ExpectedStatement,
+    ExpectedType {
+        thing: &'static str,
+        introducing_span: Span,
+        help: &'static str,
+    },
     ExpectedTypeParameterBracket {
         constructor: &'static str,
         constructor_span: Span,
@@ -94,6 +99,19 @@ impl ParseError {
                      For example: `buffer @group(0) @binding(3): u32 = 1729`",
                 );
                 "unexpected symbol".into()
+            }
+            ParseErrorKind::ExpectedType {
+                thing,
+                ref introducing_span,
+                help,
+            } => {
+                builder.set_message("Expected type in {}");
+                builder.add_label(
+                    ariadne::Label::new(introducing_span.clone())
+                        .with_message(format!("this {} lacks a type", thing)),
+                );
+                builder.set_help(help);
+                "expected a type here".into()
             }
             ParseErrorKind::ExpectedInteger {
                 unsigned: positive,

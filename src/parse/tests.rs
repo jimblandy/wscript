@@ -29,13 +29,13 @@ fn assert_matches_failed<T: fmt::Debug + ?Sized>(left: &T, right: &str) -> ! {
     );
 }
 
-fn parse_type(source: &str) -> Result<ast::Type, ParseError> {
-    let mut context = Context::new(source, 1729)?;
-    let result = context.parse_type();
+fn parse_type(source: &str) -> ast::Type {
+    let mut context = Context::new(source, 1729).unwrap();
+    let result = context.take_if_type();
     if result.is_ok() {
         assert_eq!(context.peek().kind, TokenKind::End);
     }
-    result
+    result.unwrap().unwrap()
 }
 
 #[test]
@@ -44,10 +44,10 @@ fn scalar_types() {
     fn test(source: &str, expected: ast::ScalarKind) {
         let expected_span = (1729, 1..source.len() - 1);
         assert_matches!(parse_type(source),
-                        Ok(ast::Type {
+                        ast::Type {
                             span: actual_span,
                             kind: ast::TypeKind::Scalar(actual_kind)
-                        })
+                        }
                         if actual_span == expected_span && actual_kind == expected);
     }
 
@@ -71,14 +71,14 @@ fn vector_types() {
     ) {
         let expected_span = (1729, 1..source.len() - 1);
         assert_matches!(parse_type(source),
-                        Ok(ast::Type {
+                        ast::Type {
                             span: actual_span,
                             kind: ast::TypeKind::Vector {
                                 size: actual_size,
                                 component: actual_kind,
                                 component_span: actual_component_span,
                             }
-                        })
+                        }
                         if actual_span == expected_span
                         && actual_size == expected_size
                         && actual_kind == expected_kind

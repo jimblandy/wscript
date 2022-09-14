@@ -157,7 +157,15 @@ impl<'a> Context<'a> {
             &ParseErrorKind::ExpectedBufferAttributeOrType,
         )?;
 
-        let ty = self.parse_type()?;
+        let ty = self.take_if_type()?.ok_or_else(|| ParseError {
+            span: self.peek().span.clone(),
+            kind: ParseErrorKind::ExpectedType {
+                introducing_span: keyword.clone(),
+                thing: "`buffer` statement",
+                help: "A `buffer` statement has the form: `buffer ATTRIBUTES : TYPE = VALUE`.\n\
+                     For example: `buffer @group(0) @binding(3): u32 = 1729`",
+            },
+        })?;
 
         self.expect(
             &TokenKind::Symbol('='),
@@ -172,26 +180,28 @@ impl<'a> Context<'a> {
         })
     }
 
-    fn parse_type(&mut self) -> Result<ast::Type, ParseError> {
+    fn take_if_type(&mut self) -> Result<Option<ast::Type>, ParseError> {
         if let Some(ss) = self.take_if_scalar_type()? {
-            return Ok(ss.into());
+            return Ok(Some(ss.into()));
         }
 
-        match self.peek().kind {
+        let ty = match self.peek().kind {
             TokenKind::Vec(size) => {
                 let token = self.next()?;
-                self.parse_vector_type(size, token)
+                self.parse_vector_type(size, token)?
             }
             TokenKind::Mat { columns, rows } => {
                 let token = self.next()?;
-                self.parse_matrix_type(columns, rows, token)
+                self.parse_matrix_type(columns, rows, token)?
             }
             TokenKind::Array => {
                 let token = self.next()?;
-                self.parse_array_type(token)
+                self.parse_array_type(token)?
             }
-            _ => todo!(),
-        }
+            _ => return Ok(None),
+        };
+
+        Ok(Some(ty))
     }
 
     fn take_if_scalar_type(&mut self) -> Result<Option<ScalarAndSpan>, ParseError> {
@@ -217,7 +227,15 @@ impl<'a> Context<'a> {
     ) -> Result<ast::Type, ParseError> {
         self.expect_type_parameter_bracket(&constructor, BracketPosition::Open)?;
 
-        let component_ty = self.parse_type()?;
+        let component_ty = self.take_if_type()?.ok_or_else(|| ParseError {
+            span: self.peek().span.clone(),
+            kind: ParseErrorKind::ExpectedType {
+                introducing_span: constructor.span.clone(),
+                thing: "vector type",
+                help: "All vector types take a component type as a parameter.\n\
+                       For example: `vec4<u32>`",
+            },
+        })?;
 
         let close = self.expect_type_parameter_bracket(&constructor, BracketPosition::Close)?;
         let span = join_spans(&constructor.span, &close);
@@ -250,7 +268,15 @@ impl<'a> Context<'a> {
     ) -> Result<ast::Type, ParseError> {
         self.expect_type_parameter_bracket(&constructor, BracketPosition::Open)?;
 
-        let ty = self.parse_type()?;
+        let ty = self.take_if_type()?.ok_or_else(|| ParseError {
+            span: self.peek().span.clone(),
+            kind: ParseErrorKind::ExpectedType {
+                introducing_span: constructor.span.clone(),
+                thing: "matrix type",
+                help: "All matrix types take a component type as a parameter.\n\
+                       For example: `mat3x4<f32>`",
+            },
+        })?;
 
         let close = self.expect_type_parameter_bracket(&constructor, BracketPosition::Close)?;
         let span = join_spans(&constructor.span, &close);
@@ -282,7 +308,15 @@ impl<'a> Context<'a> {
     fn parse_array_type(&mut self, constructor: Token) -> Result<ast::Type, ParseError> {
         self.expect_type_parameter_bracket(&constructor, BracketPosition::Open)?;
 
-        let element_type = Box::new(self.parse_type()?);
+        let element_type = self.take_if_type()?.ok_or_else(|| ParseError {
+            span: self.peek().span.clone(),
+            kind: ParseErrorKind::ExpectedType {
+                introducing_span: constructor.span.clone(),
+                thing: "array type",
+                help: "All array types take a component type and a length as parameters.\n\
+                       For example: `array<f32, 10>`",
+            },
+        })?;
 
         let length = if self.take_if(&TokenKind::Symbol(','))?.is_some() {
             let (length, _span) = self.expect_unsigned_integer(|| {
@@ -301,7 +335,7 @@ impl<'a> Context<'a> {
 
         Ok(ast::Type {
             kind: ast::TypeKind::Array {
-                element_type,
+                element_type: Box::new(element_type),
                 length,
             },
             span,
