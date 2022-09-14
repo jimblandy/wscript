@@ -29,7 +29,10 @@ pub enum ParseErrorKind {
         constructor_span: Span,
         position: BracketPosition,
     },
-    ExpectedTypeParameter(&'static str),
+    ExpectedScalarType {
+        constructor: &'static str,
+        constructor_span: Span,
+    },
     LexError(TokenError),
     MissingAttr(Attribute),
     TypeMatrixF32 {
@@ -140,16 +143,22 @@ impl ParseError {
                 ));
                 format!("expected {} bracket here", description).into()
             }
-            ParseErrorKind::ExpectedTypeParameter(constructor) => {
+            ParseErrorKind::ExpectedScalarType {
+                constructor,
+                ref constructor_span,
+            } => {
                 builder.set_message(format!(
-                    "Expected type parameter after '{}' type constructor",
+                    "'{}' type constructor applied to non-scalar type",
                     constructor
                 ));
+                builder.add_label(
+                    ariadne::Label::new(constructor_span.clone()).with_message("type constructor"),
+                );
                 builder.set_help(format!(
-                    "A well-formed {} type takes a type parameter, like: `{}<f32>`.",
-                    constructor, constructor
+                    "The components of a `{}` must have a scalar type, like `f32` or `bool`.",
+                    constructor
                 ));
-                "expected type parameter here".into()
+                "expected scalar type here".into()
             }
             ParseErrorKind::TypeMatrixF32 { ref parameter } => {
                 builder.set_message("Only matrices of `f32` components are supported.");

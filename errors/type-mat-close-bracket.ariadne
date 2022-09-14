@@ -1,0 +1,11 @@
+Error: Expected closing '>' for `mat3x2` type parameter
+   ╭─[type-mat-close-bracket.ws:1:42]
+   │
+ 1 │ buffer @group(1) @binding(2) : mat3x2<f32, = {}
+   ·                                ───┬──    ┬  
+   ·                                   ╰───────── type constructor
+   ·                                          │  
+   ·                                          ╰── expected closing '>' bracket here
+   · 
+   · Help: Type parameters are surrounded by `<` and `>` characters, like `mat3x2<f32>`.
+───╯

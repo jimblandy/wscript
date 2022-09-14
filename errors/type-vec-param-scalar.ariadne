@@ -1,0 +1,11 @@
+Error: 'vec4' type constructor applied to non-scalar type
+   ╭─[type-vec-param-scalar.ws:1:37]
+   │
+ 1 │ buffer @group(1) @binding(2) : vec4<vec2<f32>> = {}
+   ·                                ──┬─ ────┬────  
+   ·                                  ╰───────────── type constructor
+   ·                                         │      
+   ·                                         ╰────── expected scalar type here
+   · 
+   · Help: The components of a `vec4` must have a scalar type, like `f32` or `bool`.
+───╯

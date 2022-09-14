@@ -217,23 +217,29 @@ impl<'a> Context<'a> {
     ) -> Result<ast::Type, ParseError> {
         self.expect_type_parameter_bracket(&constructor, BracketPosition::Open)?;
 
-        let sty = self.take_if_scalar_type()?.ok_or_else(|| {
-            self.error_at_next(ParseErrorKind::ExpectedTypeParameter(
-                constructor.kind.description(),
-            ))
-        })?;
+        let component_ty = self.parse_type()?;
 
         let close = self.expect_type_parameter_bracket(&constructor, BracketPosition::Close)?;
         let span = join_spans(&constructor.span, &close);
 
-        Ok(ast::Type {
-            kind: ast::TypeKind::Vector {
-                size,
-                component: sty.kind,
-                component_span: sty.span,
-            },
-            span,
-        })
+        if let Some(kind) = component_ty.is_scalar() {
+            Ok(ast::Type {
+                kind: ast::TypeKind::Vector {
+                    size,
+                    component: kind,
+                    component_span: component_ty.span,
+                },
+                span,
+            })
+        } else {
+            Err(ParseError {
+                span: component_ty.span,
+                kind: ParseErrorKind::ExpectedScalarType {
+                    constructor: constructor.kind.description(),
+                    constructor_span: constructor.span.clone(),
+                },
+            })
+        }
     }
 
     fn parse_matrix_type(
@@ -244,22 +250,27 @@ impl<'a> Context<'a> {
     ) -> Result<ast::Type, ParseError> {
         self.expect_type_parameter_bracket(&constructor, BracketPosition::Open)?;
 
-        let sty = self.take_if_scalar_type()?.ok_or_else(|| {
-            self.error_at_next(ParseErrorKind::ExpectedTypeParameter(
-                constructor.kind.description(),
-            ))
-        })?;
+        let ty = self.parse_type()?;
 
         let close = self.expect_type_parameter_bracket(&constructor, BracketPosition::Close)?;
         let span = join_spans(&constructor.span, &close);
 
-        if sty.kind != ast::ScalarKind::F32 {
-            return Err(ParseError {
-                span,
-                kind: ParseErrorKind::TypeMatrixF32 {
-                    parameter: sty.span,
-                },
-            });
+        match ty {
+            ast::Type {
+                kind: ast::TypeKind::Scalar(ast::ScalarKind::F32),
+                ..
+            } => (),
+            ast::Type {
+                span: ref component_span,
+                ..
+            } => {
+                return Err(ParseError {
+                    span,
+                    kind: ParseErrorKind::TypeMatrixF32 {
+                        parameter: component_span.clone(),
+                    },
+                });
+            }
         }
 
         Ok(ast::Type {

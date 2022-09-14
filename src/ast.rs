@@ -160,3 +160,15 @@ pub fn join_spans(left: &Span, right: &Span) -> Span {
     assert_eq!(left.0, right.0);
     (left.0, left.1.start..right.1.end)
 }
+
+impl Type {
+    pub fn is_scalar(&self) -> Option<ScalarKind> {
+        match *self {
+            Type {
+                kind: TypeKind::Scalar(kind),
+                ..
+            } => Some(kind),
+            _ => None,
+        }
+    }
+}

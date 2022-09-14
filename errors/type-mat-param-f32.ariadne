@@ -1,0 +1,9 @@
+Error: Only matrices of `f32` components are supported.
+   ╭─[type-mat-param-f32.ws:1:32]
+   │
+ 1 │ buffer @group(1) @binding(2) : mat4x2<u32> = {}
+   ·                                ─────┬──┬──  
+   ·                                     ╰─────── matrix types must be of the form `matCxR<f32>`
+   ·                                        │    
+   ·                                        ╰──── type parameter must be `f32`
+───╯
