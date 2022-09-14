@@ -50,10 +50,6 @@ impl<'a> Context<'a> {
         Ok(std::mem::replace(&mut self.next, self.input.get_token()?))
     }
 
-    fn start(&self) -> usize {
-        self.next.span.1.start
-    }
-
     /// Return `Some(span)` if the next token is `token`, and consume it.
     ///
     /// If the next token isn't `token`, return `None` and leave the
