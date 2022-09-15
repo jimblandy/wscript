@@ -77,6 +77,7 @@ pub enum ExpressionKind {
     Binary {
         left: Box<Expression>,
         op: BinaryOp,
+        op_span: Span,
         right: Box<Expression>,
     },
     Nullary(Nullary),
@@ -88,10 +89,13 @@ pub enum UnaryOp {
     Negate,
 }
 
-#[derive(Debug)]
+#[derive(Clone, Copy, Debug)]
 pub enum BinaryOp {
     Add,
     Subtract,
+    Multiply,
+    Divide,
+    Remainder,
 }
 
 #[derive(Debug)]

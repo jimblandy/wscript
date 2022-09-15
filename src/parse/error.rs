@@ -146,7 +146,7 @@ impl ParseError {
                 "`{}` statement with missing attribute".into()
             }
             ParseErrorKind::MissingCloseParen { ref opening } => {
-                builder.set_message(format!("expected closing parenthesis"));
+                builder.set_message("expected closing parenthesis".to_string());
                 builder.add_label(
                     ariadne::Label::new(opening.clone())
                         .with_message("this opening parenthesis is unmatched"),
