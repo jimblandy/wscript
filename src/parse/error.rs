@@ -40,6 +40,9 @@ pub enum ParseErrorKind {
     },
     LexError(TokenError),
     MissingAttr(Attribute),
+    MissingCloseParen {
+        opening: Span,
+    },
     TypeMatrixF32 {
         parameter: Span,
     },
@@ -141,6 +144,14 @@ impl ParseError {
                     attribute.token(),
                 ));
                 "`{}` statement with missing attribute".into()
+            }
+            ParseErrorKind::MissingCloseParen { ref opening } => {
+                builder.set_message(format!("expected closing parenthesis"));
+                builder.add_label(
+                    ariadne::Label::new(opening.clone())
+                        .with_message("this opening parenthesis is unmatched"),
+                );
+                "expected closing parenthesis here".into()
             }
             ParseErrorKind::ExpectedTypeParameterBracket {
                 constructor,

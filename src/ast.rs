@@ -80,6 +80,7 @@ pub enum ExpressionKind {
         right: Box<Expression>,
     },
     Nullary(Nullary),
+    Vec(VectorSize),
 }
 
 #[derive(Debug)]
