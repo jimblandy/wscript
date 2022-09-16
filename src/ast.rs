@@ -69,7 +69,6 @@ pub struct Expression {
 pub enum ExpressionKind {
     Literal(f64),
     Sequence(Vec<Expression>),
-    Range(Box<std::ops::Range<Expression>>),
     Unary {
         op: UnaryOp,
         operand: Box<Expression>,
@@ -91,6 +90,7 @@ pub enum UnaryOp {
 
 #[derive(Clone, Copy, Debug)]
 pub enum BinaryOp {
+    Range,
     Add,
     Subtract,
     Multiply,

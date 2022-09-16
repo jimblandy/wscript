@@ -23,7 +23,7 @@ fn main() -> Result<()> {
         .with_context(|| format!("error reading script from {}", args.filename.display()))?;
     let source_id = cache.insert(args.filename, &script);
 
-    let _program = match parse::parse(&script, source_id) {
+    let program = match parse::parse(&script, source_id) {
         Ok(program) => program,
         Err(parse_error) => {
             parse_error.report().eprint(cache).unwrap();
@@ -31,5 +31,6 @@ fn main() -> Result<()> {
         }
     };
 
+    println!("{:#?}", program);
     Ok(())
 }

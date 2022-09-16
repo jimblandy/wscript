@@ -46,6 +46,10 @@ pub enum ParseErrorKind {
     TypeMatrixF32 {
         parameter: Span,
     },
+    UnexpectedToken {
+        place: &'static str,
+        expected: &'static str,
+    },
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -196,6 +200,10 @@ impl ParseError {
                         .with_message("type parameter must be `f32`"),
                 );
                 "matrix types must be of the form `matCxR<f32>`".into()
+            }
+            ParseErrorKind::UnexpectedToken { place, expected } => {
+                builder.set_message(format!("Unexpected token {}", place));
+                format!("expected {} here", expected).into()
             }
         };
 

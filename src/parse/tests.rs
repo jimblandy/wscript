@@ -43,12 +43,14 @@ fn scalar_types() {
     #[track_caller]
     fn test(source: &str, expected: ast::ScalarKind) {
         let expected_span = (1729, 1..source.len() - 1);
-        assert_matches!(parse_type(source),
+        assert_matches!(
+            parse_type(source),
                         ast::Type {
                             span: actual_span,
                             kind: ast::TypeKind::Scalar(actual_kind)
                         }
-                        if actual_span == expected_span && actual_kind == expected);
+                        if actual_span == expected_span && actual_kind == expected
+        );
     }
 
     test(" f32 ", ast::ScalarKind::F32);
@@ -89,4 +91,103 @@ fn vector_types() {
     test(" vec3 < i32 > ", Vs::Vec3, Sk::I32, 8..11);
     test(" vec4  <  u32 > ", Vs::Vec4, Sk::U32, 10..13);
     test(" vec2   <   bool   > ", Vs::Vec2, Sk::Bool, 12..16);
+}
+
+fn parse_expr(source: &str) -> Result<ast::Expression, error::ParseError> {
+    let mut context = Context::new(source, 1729).unwrap();
+    let result = context.parse_expr();
+    if result.is_ok() {
+        assert_eq!(context.peek().kind, TokenKind::End);
+    }
+    result
+}
+
+#[test]
+fn expr_primary() {
+    use ast::ExpressionKind as Ek;
+    use error::ParseErrorKind as Pk;
+
+    assert_matches!(parse_expr("  10.125   "),
+                    Ok(ast::Expression {
+                        kind: Ek::Literal(lit),
+                        span: (1729, span),
+                    })
+                    if span == (2..8) && lit == 10.125);
+
+    assert_matches!(parse_expr(" buffer   "),
+                    Err(error::ParseError {
+                        span: (1729, span),
+                        kind: Pk::UnexpectedToken { .. }
+                    })
+                    if span == (1..7));
+
+    assert_matches!(parse_expr("  (1000000000)   "),
+                    Ok(ast::Expression {
+                        kind: Ek::Literal(lit),
+                        span: (1729, span),
+                    })
+                    if span == (3..13) && lit == 1000000000.0);
+
+    assert_matches!(parse_expr("  (1000000000   "),
+                    Err(error::ParseError {
+                        kind: Pk::MissingCloseParen { opening },
+                        span: (1729, span),
+                    })
+                    if span == (16..16) && opening == (1729, 2..3));
+}
+
+#[test]
+fn expr_binary() {
+    use ast::ExpressionKind as Ek;
+    use error::ParseErrorKind as Pk;
+
+    #[track_caller]
+    fn is_literal(expr: &ast::Expression, span: ops::Range<usize>, n: f64) -> bool {
+        matches!(*expr,
+                 ast::Expression {
+                     span: (1729, ref actual_span),
+                     kind: Ek::Literal(actual_n)
+                 }
+                 if actual_span == &span && actual_n == n)
+    }
+
+    assert_matches!(
+        parse_expr("1 + 2 * 3"),
+        Ok(ast::Expression {
+            span: (1729, whole),
+            kind: Ek::Binary { left, op: ast::BinaryOp::Add, op_span, ref right },
+        })
+            if (whole == (0..9)
+                && op_span == (1729, 2..3)
+                && is_literal(&left, 0..1, 1.0)
+                && matches!(**right,
+                            ast::Expression {
+                                ref span,
+                                kind: Ek::Binary {
+                                    ref left,
+                                    op: ast::BinaryOp::Multiply,
+                                    ref op_span,
+                                    ref right
+                                }
+                            }
+                            if (*span == (1729, 4..9)
+                                && *op_span == (1729, 6..7)
+                                && is_literal(left, 4..5, 2.0)
+                                && is_literal(right, 8..9, 3.0))))
+    );
+
+    assert_matches!(parse_expr("1 * 2 + 3"),
+                    Ok(ast::Expression {
+                        span: (1729, whole),
+                        kind: Ek::Binary { left: _, op: ast::BinaryOp::Add, op_span, right: _ },
+                    })
+                    if whole == (0..9) && op_span == (1729, 6..7));
+
+    assert_matches!(
+        parse_expr("1 * 2 + dispatch"),
+        Err(error::ParseError {
+            span: (1729, ops::Range { start: 8, end: 16 }),
+            kind: Pk::UnexpectedToken { .. }
+        })
+    );
 }

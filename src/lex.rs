@@ -190,8 +190,10 @@ impl<'i> Input<'i> {
 
     fn get_number(&mut self) -> TokenResult {
         let mut rest = self.rest.trim_start_matches(|ch: char| ch.is_ascii_digit());
-        if let Some(fraction) = rest.strip_prefix('.') {
-            rest = fraction.trim_start_matches(|ch: char| ch.is_ascii_digit());
+        if !rest.starts_with("..") {
+            if let Some(fraction) = rest.strip_prefix('.') {
+                rest = fraction.trim_start_matches(|ch: char| ch.is_ascii_digit());
+            }
         }
 
         if let Some(mut exponent) = rest.strip_prefix('e') {

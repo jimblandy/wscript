@@ -10,8 +10,9 @@ ariadne = "0.1.5"
 indexmap = "1.9"
 unicode-xid = "0.2.3"
 
-[dependencies.wgpu]
-path = "../wgpu/wgpu"
+# [dependencies.wgpu]
+# git = "https://github.com/gfx-rs/wgpu"
+# rev = "b752c7d"
 
 [dev-dependencies]
 datatest-stable = "0.1.3"

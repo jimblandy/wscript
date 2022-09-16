@@ -5,11 +5,8 @@ use crate::lex::{Token, TokenKind};
 
 impl<'a> Context<'a> {
     pub fn parse_statement(&mut self) -> Result<ast::Statement, ParseError> {
-        match *self.peek() {
-            Token {
-                kind: TokenKind::Buffer,
-                ..
-            } => {
+        match self.peek().kind {
+            TokenKind::Buffer => {
                 let Token { span, .. } = self.next()?;
                 self.parse_buffer(span)
             }
