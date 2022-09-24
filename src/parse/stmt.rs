@@ -10,6 +10,10 @@ impl<'a> Context<'a> {
                 let Token { span, .. } = self.next()?;
                 self.parse_buffer(span)
             }
+            TokenKind::Dispatch => {
+                let Token { span, .. } = self.next()?;
+                self.parse_dispatch(span)
+            }
             _ => {
                 let Token { span, .. } = self.next()?;
                 Err(ParseError {
@@ -57,7 +61,7 @@ impl<'a> Context<'a> {
                 introducing_span: keyword.clone(),
                 thing: "`buffer` statement",
                 help: "A `buffer` statement has the form: `buffer ATTRIBUTES : TYPE = VALUE`.\n\
-                     For example: `buffer @group(0) @binding(3): u32 = 1729`",
+                       For example: `buffer @group(0) @binding(3): u32 = 1729`",
             },
         })?;
 
@@ -98,6 +102,10 @@ impl<'a> Context<'a> {
         check_duplicate_attr(value, &new, attr)?;
         *value = Some(new);
         Ok(())
+    }
+
+    pub fn parse_dispatch(&mut self, _keyword: Span) -> Result<ast::Statement, ParseError> {
+        todo!()
     }
 }
 
