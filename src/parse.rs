@@ -35,11 +35,11 @@ struct Context<'s> {
     input: Input<'s>,
 
     /// The next token. At end of file, this is `TokenKind::End`.
-    next: Token,
+    next: Token<'s>,
 }
 
 impl<'a> Context<'a> {
-    fn new(source: &'a str, source_id: usize) -> Result<Self, TokenError> {
+    fn new<'s>(source: &'s str, source_id: usize) -> Result<Context<'s>, TokenError> {
         let mut input = Input::new(source, source_id);
         let token = input.get_token()?;
         Ok(Context { input, next: token })
@@ -49,7 +49,7 @@ impl<'a> Context<'a> {
         &self.next
     }
 
-    fn next(&mut self) -> Result<Token, TokenError> {
+    fn next(&mut self) -> Result<Token<'a>, TokenError> {
         Ok(std::mem::replace(&mut self.next, self.input.get_token()?))
     }
 

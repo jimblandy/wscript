@@ -30,12 +30,12 @@ pub enum ParseErrorKind {
         help: &'static str,
     },
     ExpectedTypeParameterBracket {
-        constructor: &'static str,
+        constructor: String,
         constructor_span: Span,
         position: BracketPosition,
     },
     ExpectedScalarType {
-        constructor: &'static str,
+        constructor: String,
         constructor_span: Span,
     },
     LexError(TokenError),
@@ -158,7 +158,7 @@ impl ParseError {
                 "expected closing parenthesis here".into()
             }
             ParseErrorKind::ExpectedTypeParameterBracket {
-                constructor,
+                ref constructor,
                 position,
                 ref constructor_span,
             } => {
@@ -177,7 +177,7 @@ impl ParseError {
                 format!("expected {} bracket here", description).into()
             }
             ParseErrorKind::ExpectedScalarType {
-                constructor,
+                ref constructor,
                 ref constructor_span,
             } => {
                 builder.set_message(format!(

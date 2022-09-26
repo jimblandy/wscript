@@ -10,16 +10,17 @@ use std::str::FromStr;
 mod tests;
 
 #[derive(Debug, PartialEq)]
-pub struct Token {
-    pub kind: TokenKind,
+pub struct Token<'s> {
+    pub kind: TokenKind<'s>,
     pub span: Span,
 }
 
 #[derive(Debug, PartialEq)]
-pub enum TokenKind {
+pub enum TokenKind<'s> {
     End,
     Symbol(char),
     Number(f64),
+    Ident(&'s str),
 
     /// The '..' operator.
     Range,
@@ -46,7 +47,7 @@ pub enum TokenKind {
     },
 }
 
-type TokenResult = std::result::Result<Token, TokenError>;
+type TokenResult<'s> = std::result::Result<Token<'s>, TokenError>;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct TokenError {
@@ -105,19 +106,19 @@ pub enum BracketPosition {
 }
 
 #[derive(Debug)]
-pub struct Input<'i> {
+pub struct Input<'s> {
     /// The full text of the input.
-    text: &'i str,
+    text: &'s str,
 
     /// The tail of `text` that remains to be processed.
-    rest: &'i str,
+    rest: &'s str,
 
     /// The id of the source from which the input is drawn.
     source_id: usize,
 }
 
-impl<'i> Input<'i> {
-    pub fn new(text: &'i str, source_id: usize) -> Input {
+impl<'s> Input<'s> {
+    pub fn new(text: &'s str, source_id: usize) -> Input {
         Input {
             text,
             rest: text,
@@ -125,7 +126,7 @@ impl<'i> Input<'i> {
         }
     }
 
-    pub fn get_token(&mut self) -> TokenResult {
+    pub fn get_token(&mut self) -> TokenResult<'s> {
         let whole_len = self.text.len();
         let mut token_start;
 
@@ -181,14 +182,14 @@ impl<'i> Input<'i> {
     ///
     /// Return the substring that this update advances over, and a
     /// `Span` describing its position in `self.text`.
-    fn advance_to(&mut self, new_rest: &'i str) -> (&str, Span) {
+    fn advance_to(&mut self, new_rest: &'s str) -> (&'s str, Span) {
         let span = self.offset(self.rest)..self.offset(new_rest);
         let text = &self.text[span.clone()];
         self.rest = new_rest;
         (text, (self.source_id, span))
     }
 
-    fn get_number(&mut self) -> TokenResult {
+    fn get_number(&mut self) -> TokenResult<'s> {
         let mut rest = self.rest.trim_start_matches(|ch: char| ch.is_ascii_digit());
         if !rest.starts_with("..") {
             if let Some(fraction) = rest.strip_prefix('.') {
@@ -223,7 +224,7 @@ impl<'i> Input<'i> {
         }
     }
 
-    fn get_ident(&mut self) -> TokenResult {
+    fn get_ident(&mut self) -> TokenResult<'s> {
         let rest = self
             .rest
             .trim_start_matches(|ch: char| ch.is_xid_continue());
@@ -280,12 +281,7 @@ impl<'i> Input<'i> {
                 columns: Vec4,
                 rows: Vec4,
             },
-            _ => {
-                return Err(TokenError {
-                    kind: TokenErrorKind::UnrecognizedWord,
-                    span,
-                })
-            }
+            _ => TokenKind::Ident(ident),
         };
 
         Ok(Token { kind: token, span })
@@ -336,7 +332,7 @@ impl<'i> Input<'i> {
     /// It does not including the leading and trailing blank lines.
     /// The blank line in the midst of the code does not need to have
     /// leading spaces to avoid ending the block.
-    fn get_source_block(&mut self, after_quote: &'i str) -> TokenResult {
+    fn get_source_block(&mut self, after_quote: &'s str) -> TokenResult<'s> {
         // Make sure the rest of the line after the `"""` is just whitespace.
         let mut body = if let Some((quote_to_eol, after)) = after_quote.split_once('\n') {
             let non_space = quote_to_eol.trim_start();
@@ -433,7 +429,7 @@ impl<'i> Input<'i> {
     ///
     /// The `part` indicates which part of the code block `line`
     /// represents, for the sake of generating errors.
-    fn indentation(&self, line: &'i str, part: CodeBlockPart) -> Result<usize, TokenError> {
+    fn indentation(&self, line: &'s str, part: CodeBlockPart) -> Result<usize, TokenError> {
         let trimmed = line.trim_start_matches(' ');
 
         // Refuse to deal with tabs altogether.
@@ -454,13 +450,14 @@ impl<'i> Input<'i> {
     }
 }
 
-impl TokenKind {
-    pub fn description(&self) -> &'static str {
+impl<'s> TokenKind<'s> {
+    pub fn description(&self) -> String {
         use VectorSize as Vs;
-        match *self {
+        let s = match *self {
             TokenKind::End => "end of file",
             TokenKind::Symbol(_) => "a symbol",
             TokenKind::Number(_) => "a number",
+            TokenKind::Ident(ident) => return ident.to_string(),
             TokenKind::Range => "a range",
             TokenKind::Code(_) => "a code block",
             TokenKind::Buffer => "buffer",
@@ -512,12 +509,14 @@ impl TokenKind {
                 columns: Vs::Vec4,
                 rows: Vs::Vec4,
             } => "mat4x4",
-        }
+        };
+
+        s.to_string()
     }
 }
 
 impl BracketPosition {
-    pub fn angle_token(self) -> TokenKind {
+    pub fn angle_token(self) -> TokenKind<'static> {
         TokenKind::Symbol(self.angle_char())
     }
 
