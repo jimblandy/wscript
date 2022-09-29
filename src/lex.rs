@@ -28,7 +28,8 @@ pub enum TokenKind<'s> {
     /// Triple-quoted, indented source code.
     Code(String),
 
-    Buffer,
+    Module,
+    Init,
     Dispatch,
     Check,
 
@@ -57,7 +58,6 @@ pub struct TokenError {
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum TokenErrorKind {
-    UnrecognizedWord,
     NumberOutOfRange,
 
     /// There were non-space characters following the `"""` that
@@ -232,7 +232,8 @@ impl<'s> Input<'s> {
 
         use VectorSize::*;
         let token = match ident {
-            "buffer" => TokenKind::Buffer,
+            "module" => TokenKind::Module,
+            "init" => TokenKind::Init,
             "dispatch" => TokenKind::Dispatch,
             "check" => TokenKind::Check,
             "group" => TokenKind::Group,
@@ -460,7 +461,8 @@ impl<'s> TokenKind<'s> {
             TokenKind::Ident(ident) => return ident.to_string(),
             TokenKind::Range => "a range",
             TokenKind::Code(_) => "a code block",
-            TokenKind::Buffer => "buffer",
+            TokenKind::Module => "module",
+            TokenKind::Init => "init",
             TokenKind::Dispatch => "dispatch",
             TokenKind::Check => "check",
             TokenKind::Group => "group",

@@ -19,6 +19,18 @@ macro_rules! assert_matches {
     };
 }
 
+macro_rules! sp {
+    ( $start:literal .. $end:literal ) => {
+        (
+            1729,
+            ops::Range {
+                start: $start,
+                end: $end,
+            },
+        )
+    };
+}
+
 #[track_caller]
 fn assert_matches_failed<T: fmt::Debug + ?Sized>(left: &T, right: &str) -> ! {
     panic!(
@@ -186,8 +198,32 @@ fn expr_binary() {
     assert_matches!(
         parse_expr("1 * 2 + dispatch"),
         Err(error::ParseError {
-            span: (1729, ops::Range { start: 8, end: 16 }),
+            span: sp!(8..16),
             kind: Pk::UnexpectedToken { .. }
         })
+    );
+}
+
+fn parse_statement(source: &str) -> Result<ast::Statement, error::ParseError> {
+    let mut context = Context::new(source, 1729).unwrap();
+    let result = context.parse_statement();
+    if result.is_ok() {
+        assert_eq!(context.peek().kind, TokenKind::End);
+    }
+    result
+}
+
+#[test]
+fn parse_init() {
+    assert_matches!(
+        parse_statement("init foo = 1000"),
+        Ok(ast::Statement {
+            span: sp!(0..15),
+            kind: ast::StatementKind::Init {
+                buffer: ast::BufferId::Name { span: sp!(5..8), id },
+                value: ast::Expression { span: sp!(11..15), kind: ast::ExpressionKind::Literal(lit) },
+            }
+        })
+            if id == "foo" && lit == 1000.0
     );
 }

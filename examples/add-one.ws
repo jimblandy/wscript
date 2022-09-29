@@ -1,5 +1,4 @@
-buffer @group(0) @binding(0): array<u32> = 0 .. 4096
-dispatch """
+module """
 
     @group(0) @binding(0)
     var<storage> buf: array<u32, 4096>;
@@ -10,4 +9,6 @@ dispatch """
         buf[i] += 1;
     }
 
-check: 1 .. 4097
+init buf = 0 .. 4096
+dispatch add_one 64
+check buf = 1 .. 4097

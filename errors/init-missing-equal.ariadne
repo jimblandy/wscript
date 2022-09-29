@@ -1,0 +1,9 @@
+Error: Expected value to initialize buffer
+   ╭─[init-missing-equal.ws:1:9]
+   │
+ 1 │ init buf:
+   ·         ┬  
+   ·         ╰── an `=` symbol is expected here, before an initial value expression
+   · 
+   · Help: An `init` statement has the form `init BUFFER = VALUE`.
+───╯

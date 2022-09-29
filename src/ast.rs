@@ -1,4 +1,5 @@
 //! Abstract syntax tree for wgpu-script.
+#![allow(dead_code)]
 
 /// A span of wscript source code, as a byte range.
 pub type Span = (usize, std::ops::Range<usize>);
@@ -17,12 +18,16 @@ pub struct Statement {
 
 #[derive(Debug)]
 pub enum StatementKind {
-    /// Create a buffer.
-    Buffer {
-        binding: Binding,
+    /// Set a module.
+    Module {
+        /// WGSL source code for the compute shader.
+        wgsl: Wgsl,
+    },
 
-        /// The type of the data stored in the buffer
-        ty: Type,
+    /// Initialize a buffer.
+    Init {
+        /// The buffer to initialize.
+        buffer: BufferId,
 
         /// The value stored in the buffer, of the given type
         value: Expression,
@@ -30,15 +35,31 @@ pub enum StatementKind {
 
     /// Run a compute shader.
     Dispatch {
-        /// WGSL source code for the compute shader.
-        wgsl: Wgsl,
+        /// Name of the entry point to invoke.
+        entry_point: String,
+
+        /// Number of workgroups to dispatch
+        size: (usize, usize, usize),
     },
 
     /// Check the contents of a buffer against expected values.
     Check {
-        binding: Option<(u32, u32)>,
+        /// The buffer whose contents we should check.
+        buffer: BufferId,
+
+        /// The value we expect to find there.
         value: Expression,
     },
+}
+
+/// A way to identify a particular buffer
+#[derive(Debug)]
+pub enum BufferId {
+    /// The name of the variable bound to this buffer in the shader.
+    Name { id: String, span: Span },
+
+    /// Binding group and index.
+    Binding(Binding),
 }
 
 #[derive(Debug)]

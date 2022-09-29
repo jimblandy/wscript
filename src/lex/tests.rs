@@ -40,16 +40,17 @@ fn collect_tokens(input: &str) -> Vec<(TokenKind, std::ops::Range<usize>)> {
                        (TokenKind::End, 8..8)
                    ]);
 
-        assert_eq!(collect_tokens("buffer..dispatch check  group\tbinding array\n"),
+        assert_eq!(collect_tokens("module..dispatch check  group\tbinding array\n init"),
                    vec![
-                        (TokenKind::Buffer,   0..6),
+                        (TokenKind::Module,   0..6),
                         (TokenKind::Range,    6..8),
                         (TokenKind::Dispatch, 8..16),
                         (TokenKind::Check,    17..22),
                         (TokenKind::Group,    24..29),
                         (TokenKind::Binding,  30..37),
                         (TokenKind::Array,    38..43),
-                        (TokenKind::End,      44..44),
+                        (TokenKind::Init,     45..49),
+                        (TokenKind::End,      49..49),
                    ]);
 
         assert_eq!(collect_tokens("       f32 // comment\n\
@@ -94,20 +95,16 @@ fn collect_tokens(input: &str) -> Vec<(TokenKind, std::ops::Range<usize>)> {
         assert_eq!(collect_tokens("// comment no newline"),
                    vec![(TokenKind::End, 21..21)]);
 
-        let mut input = Input::new("slurve", 1789);
-        assert_eq!(input.get_token(),
-                   Err(TokenError {
-                       kind: TokenErrorKind::UnrecognizedWord, 
-                       span: (1789, 0..6),
-                   }));
-
-        assert_eq!(collect_tokens("mat2x3 4 5 6"),
+        assert_eq!(collect_tokens("mat2x3 4 5 6 groo:s"),
                    vec![
                        (TokenKind::Mat { columns: Vec2, rows: Vec3 }, 0..6),
                        (TokenKind::Number(4.0), 7..8),
                        (TokenKind::Number(5.0), 9..10),
                        (TokenKind::Number(6.0), 11..12),
-                       (TokenKind::End, 12..12),
+                       (TokenKind::Ident("groo"), 13..17),
+                       (TokenKind::Symbol(':'), 17..18),
+                       (TokenKind::Ident("s"), 18..19),
+                       (TokenKind::End, 19..19),
                    ]);
     }
 

@@ -1,0 +1,9 @@
+Error: Expected buffer name
+   ╭─[init-missing-buffer-name.ws:1:6]
+   │
+ 1 │ init =
+   ·      ┬  
+   ·      ╰── a buffer name is expected here
+   · 
+   · Help: Supply the name of a global variable in the current shader module.
+───╯

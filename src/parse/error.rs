@@ -17,7 +17,8 @@ pub enum ParseErrorKind {
         prior: Span,
     },
     ExpectedAttrParameter(Attribute),
-    ExpectedBufferAttributeOrType,
+    ExpectedBufferId,
+    ExpectedInitValue,
     ExpectedInteger {
         unsigned: bool,
         message: Cow<'static, str>,
@@ -97,15 +98,16 @@ impl ParseError {
                 ));
                 format!("value of `@{}` attribute", attr.token()).into()
             }
-            ParseErrorKind::ExpectedBufferAttributeOrType => {
-                builder.set_message(
-                    "In `buffer` statement, expected an attribute, or a colon for the type",
-                );
-                builder.set_help(
-                    "A `buffer` statement has the form: `buffer ATTRIBUTES : TYPE = VALUE`.\n\
-                     For example: `buffer @group(0) @binding(3): u32 = 1729`",
-                );
-                "unexpected symbol".into()
+            ParseErrorKind::ExpectedBufferId => {
+                builder.set_message("Expected buffer name");
+                builder
+                    .set_help("Supply the name of a global variable in the current shader module.");
+                "a buffer name is expected here".into()
+            }
+            ParseErrorKind::ExpectedInitValue => {
+                builder.set_message("Expected value to initialize buffer");
+                builder.set_help("An `init` statement has the form `init BUFFER = VALUE`.");
+                "an `=` symbol is expected here, before an initial value expression".into()
             }
             ParseErrorKind::ExpectedType {
                 thing,
@@ -229,10 +231,6 @@ impl TokenError {
         use ariadne::Label;
 
         match self.kind {
-            Tek::UnrecognizedWord => {
-                builder.set_message("word is not a recognized part of the wscript vocabulary");
-                "unrecognized word"
-            }
             Tek::JunkAfterCodeBlockStart(ref junk) => {
                 builder.set_message(
                     r#"non-whitespace characters following a `"""` code block introducer"#,
