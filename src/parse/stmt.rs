@@ -1,4 +1,4 @@
-use super::error::{ParseError, ParseErrorKind};
+use super::error::{self, ParseError, ParseErrorKind};
 use super::Context;
 use crate::ast::{self, join_spans, Span};
 use crate::lex::{Token, TokenKind};
@@ -34,7 +34,7 @@ impl<'a> Context<'a> {
             }
         };
 
-        self.expect(&TokenKind::Symbol('='), &ParseErrorKind::ExpectedInitValue)?;
+        self.expect(&TokenKind::Symbol('='), || ParseErrorKind::ExpectedInitValue)?;
 
         let value = self.parse_expr()?;
 
@@ -45,14 +45,15 @@ impl<'a> Context<'a> {
         })
     }
 
+    #[allow(dead_code)]
     fn parse_unsigned_attribute(
         &mut self,
         attr: error::Attribute,
         at: Span,
         value: &mut Option<(u32, Span)>,
     ) -> Result<(), ParseError> {
-        let error = ParseErrorKind::ExpectedAttrParameter(attr);
-        self.expect(&TokenKind::Symbol('('), &error)?;
+        self.expect(&TokenKind::Symbol('('),
+                    || ParseErrorKind::ExpectedAttrParameter(attr))?;
         let mut new = self.expect_unsigned_integer(|| {
             let message = format!(
                 "the {} must be a positive integer or zero",
@@ -64,7 +65,8 @@ impl<'a> Context<'a> {
             );
             (message.into(), help.into())
         })?;
-        let close = self.expect(&TokenKind::Symbol(')'), &error)?;
+        let close = self.expect(&TokenKind::Symbol(')'),
+                                || ParseErrorKind::ExpectedAttrParameter(attr))?;
         new.1 = join_spans(&at, &close);
         check_duplicate_attr(value, &new, attr)?;
         *value = Some(new);
@@ -72,6 +74,7 @@ impl<'a> Context<'a> {
     }
 }
 
+#[allow(dead_code)]
 fn check_duplicate_attr<T>(
     prior: &Option<(T, Span)>,
     new: &(T, Span),

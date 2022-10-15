@@ -67,15 +67,20 @@ impl<'a> Context<'a> {
 
     /// Require the next token to be `token`, and consume it.
     ///
-    /// If something else is next, then complain about it using `error`.
-    fn expect(&mut self, expected: &TokenKind, error: &ParseErrorKind) -> Result<Span, ParseError> {
+    /// If something else is next, then construct an error complaining
+    /// about it by calling `make_error`. Use its return value to
+    /// construct a `ParseError` whose span is the unexpected token.
+    fn expect<F>(&mut self, expected: &TokenKind, make_error: F) -> Result<Span, ParseError>
+        where F: FnOnce() -> ParseErrorKind
+    {
         if let Some(span) = self.take_if(expected)? {
             Ok(span)
         } else {
-            Err(self.error_at_next(error.clone()))
+            Err(self.error_at_next(make_error()))
         }
     }
 
+    #[allow(dead_code)]
     fn expect_unsigned_integer(
         &mut self,
         get_message_and_help: impl FnOnce() -> (Cow<'static, str>, Cow<'static, str>),

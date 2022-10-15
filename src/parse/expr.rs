@@ -76,8 +76,7 @@ impl<'a> Context<'a> {
                 let expr = self.parse_expr()?;
                 self.expect(
                     &TokenKind::Symbol(')'),
-                    &ParseErrorKind::MissingCloseParen { opening: span },
-                )?;
+                    || ParseErrorKind::MissingCloseParen { opening: span })?;
                 Ok(expr)
             }
             TokenKind::Symbol('^') => todo!(),

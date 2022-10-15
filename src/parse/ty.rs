@@ -1,3 +1,5 @@
+#![allow(dead_code)]
+
 use super::error::{ParseError, ParseErrorKind};
 use super::{Context, ScalarAndSpan};
 use crate::ast::{self, join_spans, Span};
@@ -173,7 +175,7 @@ impl<'a> Context<'a> {
     ) -> Result<Span, ParseError> {
         self.expect(
             &position.angle_token(),
-            &ParseErrorKind::ExpectedTypeParameterBracket {
+            || ParseErrorKind::ExpectedTypeParameterBracket {
                 constructor: constructor.kind.description(),
                 constructor_span: constructor.span.clone(),
                 position,
