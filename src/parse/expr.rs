@@ -74,9 +74,9 @@ impl<'a> Context<'a> {
             TokenKind::Symbol('(') => {
                 let Token { span, .. } = self.next()?;
                 let expr = self.parse_expr()?;
-                self.expect(
-                    &TokenKind::Symbol(')'),
-                    || ParseErrorKind::MissingCloseParen { opening: span })?;
+                self.expect(&TokenKind::Symbol(')'), || {
+                    ParseErrorKind::MissingCloseParen { opening: span }
+                })?;
                 Ok(expr)
             }
             TokenKind::Symbol('^') => todo!(),

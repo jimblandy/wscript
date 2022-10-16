@@ -173,13 +173,12 @@ impl<'a> Context<'a> {
         constructor: &Token,
         position: BracketPosition,
     ) -> Result<Span, ParseError> {
-        self.expect(
-            &position.angle_token(),
-            || ParseErrorKind::ExpectedTypeParameterBracket {
+        self.expect(&position.angle_token(), || {
+            ParseErrorKind::ExpectedTypeParameterBracket {
                 constructor: constructor.kind.description(),
                 constructor_span: constructor.span.clone(),
                 position,
-            },
-        )
+            }
+        })
     }
 }

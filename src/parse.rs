@@ -71,7 +71,8 @@ impl<'a> Context<'a> {
     /// about it by calling `make_error`. Use its return value to
     /// construct a `ParseError` whose span is the unexpected token.
     fn expect<F>(&mut self, expected: &TokenKind, make_error: F) -> Result<Span, ParseError>
-        where F: FnOnce() -> ParseErrorKind
+    where
+        F: FnOnce() -> ParseErrorKind,
     {
         if let Some(span) = self.take_if(expected)? {
             Ok(span)

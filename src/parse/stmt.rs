@@ -34,7 +34,9 @@ impl<'a> Context<'a> {
             }
         };
 
-        self.expect(&TokenKind::Symbol('='), || ParseErrorKind::ExpectedInitValue)?;
+        self.expect(&TokenKind::Symbol('='), || {
+            ParseErrorKind::ExpectedInitValue
+        })?;
 
         let value = self.parse_expr()?;
 
@@ -52,8 +54,9 @@ impl<'a> Context<'a> {
         at: Span,
         value: &mut Option<(u32, Span)>,
     ) -> Result<(), ParseError> {
-        self.expect(&TokenKind::Symbol('('),
-                    || ParseErrorKind::ExpectedAttrParameter(attr))?;
+        self.expect(&TokenKind::Symbol('('), || {
+            ParseErrorKind::ExpectedAttrParameter(attr)
+        })?;
         let mut new = self.expect_unsigned_integer(|| {
             let message = format!(
                 "the {} must be a positive integer or zero",
@@ -65,8 +68,9 @@ impl<'a> Context<'a> {
             );
             (message.into(), help.into())
         })?;
-        let close = self.expect(&TokenKind::Symbol(')'),
-                                || ParseErrorKind::ExpectedAttrParameter(attr))?;
+        let close = self.expect(&TokenKind::Symbol(')'), || {
+            ParseErrorKind::ExpectedAttrParameter(attr)
+        })?;
         new.1 = join_spans(&at, &close);
         check_duplicate_attr(value, &new, attr)?;
         *value = Some(new);
