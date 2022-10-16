@@ -9,6 +9,7 @@ it matches the expectation.
 
 */
 
+use anyhow::Context;
 use datatest_stable::{harness, Result};
 
 use std::{fs, path};
@@ -22,17 +23,16 @@ fn ariadne(path: &path::Path) -> Result<()> {
     let mut cache = wscript::error::Cache::default();
 
     let script = fs::read_to_string(path)
-        .unwrap_or_else(|err| format!("error reading script from {}: {}", path.display(), err));
+        .with_context(|| format!("error reading script from {}", path.display()))?;
 
     let mut ariadne_path = path.to_owned();
     ariadne_path.set_extension("ariadne");
-    let expected_ariadne = fs::read_to_string(&ariadne_path).unwrap_or_else(|err| {
+    let expected_ariadne = fs::read_to_string(&ariadne_path).with_context(|| {
         format!(
-            "error reading expected ariadne output from {}: {}",
+            "error reading expected ariadne output from {}",
             ariadne_path.display(),
-            err
         )
-    });
+    })?;
 
     // Don't include the directory name in the error message.
     let file_name: path::PathBuf = path.file_name().unwrap().to_owned().into();
