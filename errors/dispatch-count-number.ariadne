@@ -1,0 +1,9 @@
+Error: Expected number in workgroup count
+   ╭─[dispatch-count-number.ws:1:15]
+   │
+ 1 │ dispatch foo (x)
+   ·               ┬  
+   ·               ╰── expected a positive integer or zero here
+   · 
+   · Help: A workgroup count is a triplet of sizes, like `(16,32,64)`.
+───╯

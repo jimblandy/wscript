@@ -19,11 +19,14 @@ pub enum ParseErrorKind {
     ExpectedAttrParameter(Attribute),
     ExpectedBufferId,
     ExpectedInitValue,
+    ExpectedCheckValue,
+    ExpectedEntryPointName,
     ExpectedInteger {
         unsigned: bool,
         message: Cow<'static, str>,
         help: Cow<'static, str>,
     },
+    ExpectedModuleCode,
     ExpectedStatement,
     ExpectedType {
         thing: &'static str,
@@ -39,6 +42,9 @@ pub enum ParseErrorKind {
         constructor: String,
         constructor_span: Span,
     },
+    ExpectedWorkgroupCount {
+        command_span: Span,
+    },
     LexError(TokenError),
     MissingAttr(Attribute),
     MissingCloseParen {
@@ -51,6 +57,7 @@ pub enum ParseErrorKind {
         place: &'static str,
         expected: &'static str,
     },
+    WorkgroupCountTooLong,
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -109,6 +116,18 @@ impl ParseError {
                 builder.set_help("An `init` statement has the form `init BUFFER = VALUE`.");
                 "an `=` symbol is expected here, before an initial value expression".into()
             }
+            ParseErrorKind::ExpectedCheckValue => {
+                builder.set_message("Expected value of expected buffer contents");
+                builder.set_help("A `check` statement has the form `check BUFFER = VALUE`.");
+                "an `=` symbol is expected here, before an expected-value expression".into()
+            }
+            ParseErrorKind::ExpectedEntryPointName => {
+                builder.set_message("Expected name of shader entry point");
+                builder.set_help(
+                    "A `dispatch` command starts with the name of the entry point to invoke.",
+                );
+                "entry point name expected here".into()
+            }
             ParseErrorKind::ExpectedType {
                 thing,
                 ref introducing_span,
@@ -135,10 +154,15 @@ impl ParseError {
                     "expected an integer here".into()
                 }
             }
+            ParseErrorKind::ExpectedModuleCode => {
+                builder.set_message("Expected WGSL code for `module` statement");
+                builder.set_help("Supply indented WGSL code for the shader module.");
+                "A triple-quoted code block is expected here".into()
+            }
             ParseErrorKind::ExpectedStatement => {
                 builder.set_message("Unexpected token at start of statement");
                 builder.set_help(
-                    "Statements begin with a command like `buffer`, `dispatch`, or `check`.",
+                    "Statements begin with a command like `module`, `init`, `dispatch`, or `check`.",
                 );
                 "expected statement here".into()
             }
@@ -195,6 +219,11 @@ impl ParseError {
                 ));
                 "expected scalar type here".into()
             }
+            ParseErrorKind::ExpectedWorkgroupCount { command_span: _ } => {
+                builder.set_message("Expected workgroup count for `dispatch` command");
+                builder.set_help("A workgroup count is a parenthesized list of one to three dimensions: `(10)`, `(16,32)`, `(64,64,64)`");
+                "expected workgroup count".into()
+            }
             ParseErrorKind::TypeMatrixF32 { ref parameter } => {
                 builder.set_message("Only matrices of `f32` components are supported.");
                 builder.add_label(
@@ -206,6 +235,14 @@ impl ParseError {
             ParseErrorKind::UnexpectedToken { place, expected } => {
                 builder.set_message(format!("Unexpected token {}", place));
                 format!("expected {} here", expected).into()
+            }
+            ParseErrorKind::WorkgroupCountTooLong => {
+                builder.set_message("Too many dimensions in workgroup count");
+                builder.set_help(
+                    "A workgroup count has one to three dimensions, \
+                                  like `(10)` or `(10,20,30)`.",
+                );
+                "Count should end here".into()
             }
         };
 

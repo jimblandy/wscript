@@ -1,0 +1,9 @@
+Error: Expected name of shader entry point
+   ╭─[dispatch-entry-name-missing.ws:1:10]
+   │
+ 1 │ dispatch 10
+   ·          ─┬  
+   ·           ╰── entry point name expected here
+   · 
+   · Help: A `dispatch` command starts with the name of the entry point to invoke.
+───╯

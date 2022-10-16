@@ -227,3 +227,81 @@ fn parse_init() {
             if id == "foo" && lit == 1000.0
     );
 }
+
+#[test]
+fn parse_module() {
+    assert_matches!(
+        parse_statement(r#"  module """
+
+    var<uniform> buf: array<i32>;
+
+    fn f() -> i32 { return buf[0]; }
+
+"#),
+        Ok(ast::Statement {
+            span: sp!(2..87),
+            kind: ast::StatementKind::Module {
+                wgsl: ast::Wgsl { text, span: sp!(9..87) }
+            }
+        })
+            if text == "var<uniform> buf: array<i32>;\n\nfn f() -> i32 { return buf[0]; }\n"
+    );
+}
+
+#[test]
+fn parse_workgroup_count() {
+    fn parse(source: &str) -> Result<ast::WorkgroupCount, error::ParseError> {
+        let mut context = Context::new(source, 1729).unwrap();
+        let command_span = match context.next() {
+            Ok(Token {
+                span,
+                kind: TokenKind::Ident(_),
+            }) => span,
+            _ => panic!("input must start with an identifier"),
+        };
+        let result = context.parse_workgroup_count(&command_span);
+        if result.is_ok() {
+            assert_eq!(context.peek().kind, TokenKind::End);
+        }
+        result
+    }
+
+    assert_matches!(
+        parse(" bleah  (20)"),
+        Ok(ast::WorkgroupCount {
+            size: (20, 1, 1),
+            span: sp!(8..12)
+        })
+    );
+
+    assert_matches!(
+        parse(" bleah  (20,30)"),
+        Ok(ast::WorkgroupCount {
+            size: (20, 30, 1),
+            span: sp!(8..15)
+        })
+    );
+
+    assert_matches!(
+        parse(" bleah  (20,30,40)"),
+        Ok(ast::WorkgroupCount {
+            size: (20, 30, 40),
+            span: sp!(8..18)
+        })
+    );
+}
+
+#[test]
+fn parse_dispatch() {
+    assert_matches!(
+        parse_statement("   dispatch bleah (2,3)   "),
+        Ok(ast::Statement {
+            span: sp!(3..23),
+            kind: ast::StatementKind::Dispatch {
+                entry_point: ast::EntryPoint { name, span: sp!(12..17) },
+                count: ast::WorkgroupCount { .. }
+            }
+        })
+        if name == "bleah"
+    );
+}

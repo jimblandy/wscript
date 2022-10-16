@@ -1,0 +1,7 @@
+Error: Unexpected token in workgroup count
+   ╭─[dispatch-count-unexpected.ws:1:17]
+   │
+ 1 │ dispatch foo (10/
+   ·                 ┬  
+   ·                 ╰── expected a comma or a closing parenthesis here
+───╯

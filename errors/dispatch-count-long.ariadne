@@ -1,0 +1,9 @@
+Error: Too many dimensions in workgroup count
+   ╭─[dispatch-count-long.ws:1:25]
+   │
+ 1 │ dispatch foo (10, 20, 30, 40)
+   ·                         ┬  
+   ·                         ╰── Count should end here
+   · 
+   · Help: A workgroup count has one to three dimensions, like `(10)` or `(10,20,30)`.
+───╯

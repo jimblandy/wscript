@@ -1,0 +1,9 @@
+Error: Expected workgroup count for `dispatch` command
+   ╭─[dispatch-count-open-missing.ws:1:14]
+   │
+ 1 │ dispatch foo 10
+   ·              ─┬  
+   ·               ╰── expected workgroup count
+   · 
+   · Help: A workgroup count is a parenthesized list of one to three dimensions: `(10)`, `(16,32)`, `(64,64,64)`
+───╯

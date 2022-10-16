@@ -1,0 +1,1 @@
+dispatch foo 10

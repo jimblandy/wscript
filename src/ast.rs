@@ -36,10 +36,10 @@ pub enum StatementKind {
     /// Run a compute shader.
     Dispatch {
         /// Name of the entry point to invoke.
-        entry_point: String,
+        entry_point: EntryPoint,
 
         /// Number of workgroups to dispatch
-        size: (usize, usize, usize),
+        count: WorkgroupCount,
     },
 
     /// Check the contents of a buffer against expected values.
@@ -69,14 +69,24 @@ pub struct Binding {
 }
 
 #[derive(Debug)]
+pub struct EntryPoint {
+    pub name: String,
+    pub span: Span,
+}
+
+#[derive(Debug)]
 pub struct Wgsl {
     /// WGSL source text, with all common indentation removed.
     pub text: String,
 
-    /// Indentation depth, in columns
-    pub indentation: usize,
-
     /// Position of this WGSL source code in the script.
+    pub span: Span,
+}
+
+/// A workgroup size or count.
+#[derive(Debug)]
+pub struct WorkgroupCount {
+    pub size: (usize, usize, usize),
     pub span: Span,
 }
 
