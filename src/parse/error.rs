@@ -81,24 +81,32 @@ impl ParseError {
         use Attribute as At;
 
         let (source_id, range) = self.span.clone();
-        let mut builder =
-            Report::build(ReportKind::Error, source_id, range.start).with_config(config);
-        let label: Cow<'static, str> = match self.kind {
+        let mut b = Report::build(ReportKind::Error, source_id, range.start).with_config(config);
+
+        fn label<M: ToString>(b: &mut crate::error::ReportBuilder, span: &Span, message: M) {
+            b.add_label(ariadne::Label::new(span.clone()).with_message(message));
+        }
+
+        let main_label: Cow<'static, str> = match self.kind {
             ParseErrorKind::DuplicateAttribute { attr, ref prior } => {
-                builder.set_message(format!(
+                b.set_message(format!(
                     "{} attribute `@{}` appears more than once",
                     attr.owner(),
                     attr.token()
                 ));
-                builder.add_label(ariadne::Label::new(prior.clone()).with_message(format!(
-                    "this is the first occurrence of the `@{}` attribute",
-                    attr.token()
-                )));
+                label(
+                    &mut b,
+                    prior,
+                    format!(
+                        "this is the first occurrence of the `@{}` attribute",
+                        attr.token()
+                    ),
+                );
                 "this attribute is redundant".into()
             }
             ParseErrorKind::ExpectedAttrParameter(At::Buffer(attr)) => {
-                builder.set_message(format!("Unexpected token in `@{}` attribute", attr.token()));
-                builder.set_help(format!(
+                b.set_message(format!("Unexpected token in `@{}` attribute", attr.token()));
+                b.set_help(format!(
                     "Specify a {} with an attribute like `@{}(3)`.",
                     attr.description(),
                     attr.token()
@@ -106,24 +114,23 @@ impl ParseError {
                 format!("value of `@{}` attribute", attr.token()).into()
             }
             ParseErrorKind::ExpectedBufferId => {
-                builder.set_message("Expected buffer name");
-                builder
-                    .set_help("Supply the name of a global variable in the current shader module.");
+                b.set_message("Expected buffer name");
+                b.set_help("Supply the name of a global variable in the current shader module.");
                 "a buffer name is expected here".into()
             }
             ParseErrorKind::ExpectedInitValue => {
-                builder.set_message("Expected value to initialize buffer");
-                builder.set_help("An `init` statement has the form `init BUFFER = VALUE`.");
+                b.set_message("Expected value to initialize buffer");
+                b.set_help("An `init` statement has the form `init BUFFER = VALUE`.");
                 "an `=` symbol is expected here, before an initial value expression".into()
             }
             ParseErrorKind::ExpectedCheckValue => {
-                builder.set_message("Expected value of expected buffer contents");
-                builder.set_help("A `check` statement has the form `check BUFFER = VALUE`.");
+                b.set_message("Expected value of expected buffer contents");
+                b.set_help("A `check` statement has the form `check BUFFER = VALUE`.");
                 "an `=` symbol is expected here, before an expected-value expression".into()
             }
             ParseErrorKind::ExpectedEntryPointName => {
-                builder.set_message("Expected name of shader entry point");
-                builder.set_help(
+                b.set_message("Expected name of shader entry point");
+                b.set_help(
                     "A `dispatch` command starts with the name of the entry point to invoke.",
                 );
                 "entry point name expected here".into()
@@ -133,12 +140,13 @@ impl ParseError {
                 ref introducing_span,
                 help,
             } => {
-                builder.set_message("Expected type in {}");
-                builder.add_label(
-                    ariadne::Label::new(introducing_span.clone())
-                        .with_message(format!("this {} lacks a type", thing)),
+                b.set_message("Expected type in {}");
+                label(
+                    &mut b,
+                    introducing_span,
+                    format!("this {} lacks a type", thing),
                 );
-                builder.set_help(help);
+                b.set_help(help);
                 "expected a type here".into()
             }
             ParseErrorKind::ExpectedInteger {
@@ -146,8 +154,8 @@ impl ParseError {
                 ref message,
                 ref help,
             } => {
-                builder.set_message(message);
-                builder.set_help(help);
+                b.set_message(message);
+                b.set_help(help);
                 if positive {
                     "expected a positive integer or zero here".into()
                 } else {
@@ -155,20 +163,20 @@ impl ParseError {
                 }
             }
             ParseErrorKind::ExpectedModuleCode => {
-                builder.set_message("Expected WGSL code for `module` statement");
-                builder.set_help("Supply indented WGSL code for the shader module.");
+                b.set_message("Expected WGSL code for `module` statement");
+                b.set_help("Supply indented WGSL code for the shader module.");
                 "A triple-quoted code block is expected here".into()
             }
             ParseErrorKind::ExpectedStatement => {
-                builder.set_message("Unexpected token at start of statement");
-                builder.set_help(
+                b.set_message("Unexpected token at start of statement");
+                b.set_help(
                     "Statements begin with a command like `module`, `init`, `dispatch`, or `check`.",
                 );
                 "expected statement here".into()
             }
-            ParseErrorKind::LexError(ref lex_error) => lex_error.build_report(&mut builder).into(),
+            ParseErrorKind::LexError(ref lex_error) => lex_error.build_report(&mut b).into(),
             ParseErrorKind::MissingAttr(attribute) => {
-                builder.set_message(format!(
+                b.set_message(format!(
                     "{} is missing required `@{}` attribute",
                     attribute.owner(),
                     attribute.token(),
@@ -176,11 +184,8 @@ impl ParseError {
                 "`{}` statement with missing attribute".into()
             }
             ParseErrorKind::MissingCloseParen { ref opening } => {
-                builder.set_message("expected closing parenthesis".to_string());
-                builder.add_label(
-                    ariadne::Label::new(opening.clone())
-                        .with_message("this opening parenthesis is unmatched"),
-                );
+                b.set_message("expected closing parenthesis".to_string());
+                label(&mut b, opening, "this opening parenthesis is unmatched");
                 "expected closing parenthesis here".into()
             }
             ParseErrorKind::ExpectedTypeParameterBracket {
@@ -189,14 +194,12 @@ impl ParseError {
                 ref constructor_span,
             } => {
                 let description = position.angle_description();
-                builder.set_message(format!(
+                b.set_message(format!(
                     "Expected {} for `{}` type parameter",
                     description, constructor
                 ));
-                builder.add_label(
-                    ariadne::Label::new(constructor_span.clone()).with_message("type constructor"),
-                );
-                builder.set_help(format!(
+                label(&mut b, constructor_span, "type constructor");
+                b.set_help(format!(
                     "Type parameters are surrounded by `<` and `>` characters, like `{}<f32>`.",
                     constructor
                 ));
@@ -206,39 +209,37 @@ impl ParseError {
                 ref constructor,
                 ref constructor_span,
             } => {
-                builder.set_message(format!(
+                b.set_message(format!(
                     "'{}' type constructor applied to non-scalar type",
                     constructor
                 ));
-                builder.add_label(
-                    ariadne::Label::new(constructor_span.clone()).with_message("type constructor"),
-                );
-                builder.set_help(format!(
+                label(&mut b, constructor_span, "type constructor");
+                b.set_help(format!(
                     "The components of a `{}` must have a scalar type, like `f32` or `bool`.",
                     constructor
                 ));
                 "expected scalar type here".into()
             }
             ParseErrorKind::ExpectedWorkgroupCount { command_span: _ } => {
-                builder.set_message("Expected workgroup count for `dispatch` command");
-                builder.set_help("A workgroup count is a parenthesized list of one to three dimensions: `(10)`, `(16,32)`, `(64,64,64)`");
+                b.set_message("Expected workgroup count for `dispatch` command");
+                b.set_help(
+                    "A workgroup count is a parenthesized list of one to three dimensions: \
+                            `(10)`, `(16,32)`, `(64,64,64)`",
+                );
                 "expected workgroup count".into()
             }
             ParseErrorKind::TypeMatrixF32 { ref parameter } => {
-                builder.set_message("Only matrices of `f32` components are supported.");
-                builder.add_label(
-                    ariadne::Label::new(parameter.clone())
-                        .with_message("type parameter must be `f32`"),
-                );
+                b.set_message("Only matrices of `f32` components are supported.");
+                label(&mut b, parameter, "type parameter must be `f32`");
                 "matrix types must be of the form `matCxR<f32>`".into()
             }
             ParseErrorKind::UnexpectedToken { place, expected } => {
-                builder.set_message(format!("Unexpected token {}", place));
+                b.set_message(format!("Unexpected token {}", place));
                 format!("expected {} here", expected).into()
             }
             ParseErrorKind::WorkgroupCountTooLong => {
-                builder.set_message("Too many dimensions in workgroup count");
-                builder.set_help(
+                b.set_message("Too many dimensions in workgroup count");
+                b.set_help(
                     "A workgroup count has one to three dimensions, \
                                   like `(10)` or `(10,20,30)`.",
                 );
@@ -246,9 +247,9 @@ impl ParseError {
             }
         };
 
-        builder.add_label(ariadne::Label::new(self.span.clone()).with_message(label));
+        label(&mut b, &self.span, main_label);
 
-        builder.finish()
+        b.finish()
     }
 }
 
