@@ -81,7 +81,9 @@ impl ParseError {
         use Attribute as At;
 
         let (source_id, range) = self.span.clone();
-        let mut b = Report::build(ReportKind::Error, source_id, range.start).with_config(config);
+        let mut builder =
+            Report::build(ReportKind::Error, source_id, range.start).with_config(config);
+        let b = &mut builder;
 
         fn label<M: ToString>(b: &mut crate::error::ReportBuilder, span: &Span, message: M) {
             b.add_label(ariadne::Label::new(span.clone()).with_message(message));
@@ -95,7 +97,7 @@ impl ParseError {
                     attr.token()
                 ));
                 label(
-                    &mut b,
+                    b,
                     prior,
                     format!(
                         "this is the first occurrence of the `@{}` attribute",
@@ -141,11 +143,7 @@ impl ParseError {
                 help,
             } => {
                 b.set_message("Expected type in {}");
-                label(
-                    &mut b,
-                    introducing_span,
-                    format!("this {} lacks a type", thing),
-                );
+                label(b, introducing_span, format!("this {} lacks a type", thing));
                 b.set_help(help);
                 "expected a type here".into()
             }
@@ -174,7 +172,7 @@ impl ParseError {
                 );
                 "expected statement here".into()
             }
-            ParseErrorKind::LexError(ref lex_error) => lex_error.build_report(&mut b).into(),
+            ParseErrorKind::LexError(ref lex_error) => lex_error.build_report(b).into(),
             ParseErrorKind::MissingAttr(attribute) => {
                 b.set_message(format!(
                     "{} is missing required `@{}` attribute",
@@ -185,7 +183,7 @@ impl ParseError {
             }
             ParseErrorKind::MissingCloseParen { ref opening } => {
                 b.set_message("expected closing parenthesis".to_string());
-                label(&mut b, opening, "this opening parenthesis is unmatched");
+                label(b, opening, "this opening parenthesis is unmatched");
                 "expected closing parenthesis here".into()
             }
             ParseErrorKind::ExpectedTypeParameterBracket {
@@ -198,7 +196,7 @@ impl ParseError {
                     "Expected {} for `{}` type parameter",
                     description, constructor
                 ));
-                label(&mut b, constructor_span, "type constructor");
+                label(b, constructor_span, "type constructor");
                 b.set_help(format!(
                     "Type parameters are surrounded by `<` and `>` characters, like `{}<f32>`.",
                     constructor
@@ -213,7 +211,7 @@ impl ParseError {
                     "'{}' type constructor applied to non-scalar type",
                     constructor
                 ));
-                label(&mut b, constructor_span, "type constructor");
+                label(b, constructor_span, "type constructor");
                 b.set_help(format!(
                     "The components of a `{}` must have a scalar type, like `f32` or `bool`.",
                     constructor
@@ -230,7 +228,7 @@ impl ParseError {
             }
             ParseErrorKind::TypeMatrixF32 { ref parameter } => {
                 b.set_message("Only matrices of `f32` components are supported.");
-                label(&mut b, parameter, "type parameter must be `f32`");
+                label(b, parameter, "type parameter must be `f32`");
                 "matrix types must be of the form `matCxR<f32>`".into()
             }
             ParseErrorKind::UnexpectedToken { place, expected } => {
@@ -247,9 +245,9 @@ impl ParseError {
             }
         };
 
-        label(&mut b, &self.span, main_label);
+        label(b, &self.span, main_label);
 
-        b.finish()
+        builder.finish()
     }
 }
 
