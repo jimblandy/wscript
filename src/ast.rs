@@ -59,13 +59,7 @@ pub enum BufferId {
     Name { id: String, span: Span },
 
     /// Binding group and index.
-    Binding(Binding),
-}
-
-#[derive(Debug)]
-pub struct Binding {
-    pub group: (u32, Span),
-    pub binding: (u32, Span),
+    Binding { naga: naga::ResourceBinding, span: Span },
 }
 
 #[derive(Debug)]

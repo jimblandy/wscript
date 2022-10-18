@@ -8,11 +8,18 @@ anyhow = "1.0"
 argh = "0.1.8"
 ariadne = "0.1.5"
 indexmap = "1.9"
+pollster = "0.2.5"
 unicode-xid = "0.2.3"
 
-# [dependencies.wgpu]
-# git = "https://github.com/gfx-rs/wgpu"
-# rev = "b752c7d"
+[dependencies.wgpu]
+git = "https://github.com/gfx-rs/wgpu"
+rev = "ce081796"
+features = ["naga"]
+
+[dependencies.naga]
+git = "https://github.com/gfx-rs/naga"
+rev = "c52d9102"
+features = ["clone", "span"]
 
 [dev-dependencies]
 datatest-stable = "0.1.3"

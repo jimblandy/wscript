@@ -1,7 +1,7 @@
 #![doc = include_str!("../README.md")]
 #![allow(dead_code)]
 
-use wscript::{error, parse};
+use wscript::{error, parse, run};
 
 use anyhow::{Context, Result};
 use argh::FromArgs;
@@ -31,6 +31,5 @@ fn main() -> Result<()> {
         }
     };
 
-    println!("{:#?}", program);
-    Ok(())
+    run::run(program, cache)
 }
