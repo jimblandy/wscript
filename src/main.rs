@@ -1,6 +1,7 @@
 #![doc = include_str!("../README.md")]
 #![allow(dead_code)]
 
+use wscript::error::AriadneReport as _;
 use wscript::{error, parse};
 
 use anyhow::{Context, Result};
@@ -26,7 +27,7 @@ fn main() -> Result<()> {
     let program = match parse::parse(&script, source_id) {
         Ok(program) => program,
         Err(parse_error) => {
-            parse_error.report().eprint(cache).unwrap();
+            parse_error.write(std::io::stderr(), &mut cache)?;
             std::process::exit(1);
         }
     };

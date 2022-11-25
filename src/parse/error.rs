@@ -71,12 +71,16 @@ pub enum BufferAttribute {
     Binding,
 }
 
-impl ParseError {
-    pub fn report(&self) -> error::Report {
-        self.report_with_config(ariadne::Config::default())
-    }
-
-    pub fn report_with_config(&self, config: ariadne::Config) -> error::Report {
+impl error::AriadneReport for ParseError {
+    fn write_with_config<W>(
+        &self,
+        stream: W,
+        cache: &mut error::Cache,
+        config: ariadne::Config,
+    ) -> std::io::Result<()>
+    where
+        W: std::io::Write,
+    {
         use ariadne::{Report, ReportKind};
         use Attribute as At;
 
@@ -247,7 +251,8 @@ impl ParseError {
 
         label(b, &self.span, main_label);
 
-        builder.finish()
+        let report = builder.finish();
+        report.write(cache, stream)
     }
 }
 
