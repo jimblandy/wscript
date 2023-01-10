@@ -2,17 +2,26 @@
 name = "wscript"
 version = "0.1.0"
 edition = "2021"
+rust-version = "1.65"
 
 [dependencies]
 anyhow = "1.0"
 argh = "0.1.8"
 ariadne = "0.1.5"
+fallible-iterator = "0.2"
 indexmap = "1.9"
+pollster = "0.2.5"
 unicode-xid = "0.2.3"
 
-# [dependencies.wgpu]
-# git = "https://github.com/gfx-rs/wgpu"
-# rev = "b752c7d"
+[dependencies.wgpu]
+git = "https://github.com/gfx-rs/wgpu"
+rev = "d4b1d57f"
+features = ["naga"]
+
+[dependencies.naga]
+git = "https://github.com/gfx-rs/naga"
+rev = "e7fc8e6"
+features = ["clone", "span"]
 
 [dev-dependencies]
 datatest-stable = "0.1.3"

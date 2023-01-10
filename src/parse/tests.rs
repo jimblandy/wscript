@@ -220,7 +220,7 @@ fn parse_init() {
         Ok(ast::Statement {
             span: sp!(0..15),
             kind: ast::StatementKind::Init {
-                buffer: ast::BufferId::Name { span: sp!(5..8), id },
+                buffer: ast::BufferId { span: sp!(5..8), kind: ast::BufferIdKind::Name(id) },
                 value: ast::Expression { span: sp!(11..15), kind: ast::ExpressionKind::Literal(lit) },
             }
         })

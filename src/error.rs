@@ -48,6 +48,10 @@ impl fmt::Debug for Cache {
 }
 
 /// Values that can be written to an output stream, given a [`Cache`].
+///
+/// This includes both Ariadne-rendered errors and everyday Rust
+/// errors: they can be rendered when a cache is available, they just
+/// don't need it.
 pub trait AriadneReport {
     /// Produce an `ariadne::Report` using the given configuration.
     fn write_with_config<W>(
