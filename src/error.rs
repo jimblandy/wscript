@@ -11,6 +11,10 @@ use std::{fmt, io};
 pub type Report = ariadne::Report<ast::Span>;
 pub type ReportBuilder = ariadne::ReportBuilder<ast::Span>;
 
+/// An `ariadne::Cache` implementation.
+///
+/// We use `usize` for Ariadne IDs, where the value is the index in
+/// this table.
 #[derive(Default)]
 pub struct Cache {
     sources: IndexMap<PathBuf, ariadne::Source>,
@@ -48,6 +52,10 @@ impl fmt::Debug for Cache {
 }
 
 /// Values that can be written to an output stream, given a [`Cache`].
+///
+/// This includes both Ariadne-rendered errors and everyday Rust
+/// errors: they can be rendered when a cache is available, they just
+/// don't need it.
 pub trait AriadneReport {
     /// Produce an `ariadne::Report` using the given configuration.
     fn write_with_config<W>(

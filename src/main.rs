@@ -2,7 +2,7 @@
 #![allow(dead_code)]
 
 use wscript::error::AriadneReport as _;
-use wscript::{error, parse};
+use wscript::{error, parse, plan, run};
 
 use anyhow::{Context, Result};
 use argh::FromArgs;
@@ -32,6 +32,19 @@ fn main() -> Result<()> {
         }
     };
 
-    println!("{:#?}", program);
+    let plan = match plan::plan(&program, source_id) {
+        Ok(plan) => plan,
+        Err(plan_error) => {
+            plan_error.write(std::io::stderr(), &mut cache)?;
+            std::process::exit(1);
+        }
+    };
+
+    let mut context = run::Context::create("wscript initial device")?;
+    if let Err(run_error) = plan(&mut context) {
+        run_error.write(std::io::stderr(), &mut cache)?;
+        std::process::exit(1);
+    }
+
     Ok(())
 }
