@@ -74,7 +74,10 @@ impl<'a> Context<'a> {
 
         let value = self.parse_expr()?;
 
-        let buffer = ast::BufferId::Name { id, span };
+        let buffer = ast::BufferId {
+            span,
+            kind: ast::BufferIdKind::Name(id),
+        };
         Ok(ast::Statement {
             span: join_spans(&keyword, &value.span),
             kind: ast::StatementKind::Init { buffer, value },
@@ -187,7 +190,10 @@ impl<'a> Context<'a> {
 
         let value = self.parse_expr()?;
 
-        let buffer = ast::BufferId::Name { id, span };
+        let buffer = ast::BufferId {
+            span,
+            kind: ast::BufferIdKind::Name(id),
+        };
         Ok(ast::Statement {
             span: join_spans(&keyword, &value.span),
             kind: ast::StatementKind::Check { buffer, value },
