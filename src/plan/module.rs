@@ -1,4 +1,4 @@
-//! Shader module planning.
+//! Statically known information about shader modules.
 
 use super::{error, Result};
 use crate::ast::{self, Span};

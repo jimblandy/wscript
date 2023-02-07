@@ -20,6 +20,7 @@
 
 mod error;
 mod module;
+mod buffer;
 
 use crate::ast;
 use crate::run;
@@ -31,16 +32,6 @@ use indexmap::IndexSet;
 use std::io;
 use std::sync::Arc;
 
-/// An execution plan for producing a block of bytes on the CPU.
-///
-/// A bytes plan is a trait object that can either write the bytes it
-/// represents to a `&mut [u8]` or compare the bytes in a `&[u8]`
-/// against the bytes it represents.
-pub trait ByteSource {
-    fn write(&self, stream: &mut dyn io::Write) -> io::Result<()>;
-    fn compare(&self, stream: &mut dyn io::Read) -> io::Result<Comparison>;
-}
-
 pub enum Comparison {
     /// This plan's bytes have the given length, and the corresponding
     /// prefix of the input matches.
@@ -50,7 +41,11 @@ pub enum Comparison {
     Mismatch { pos: usize },
 }
 
-pub type BytesPlan = dyn ByteSource + 'static;
+/// A source of data to initialize a GPU buffer, or check its contents.
+pub type ByteSource = dyn io::Read + 'static;
+
+/// A plan that can construct a [`ByteSource`]
+pub type BytesPlan = dyn Fn(&mut run::Context) -> run::Result<Box<ByteSource>> + 'static;
 
 /// A `Plan` is a closure that runs a script, given a [`Context`].
 /// It may fail, returning a `run::Error`.
@@ -130,11 +125,11 @@ impl Planner {
     fn plan_init(
         &mut self,
         statement: &ast::Statement,
-        buffer: &ast::BufferId,
+        buffer_id: &ast::BufferId,
         value: &ast::Expression,
     ) -> Result<Box<Plan>> {
         let module = self.require_module(statement)?;
-        let buffer = module.find_buffer(buffer)?;
+        let buffer = module.find_buffer(buffer_id)?;
         let value_plan = self.plan_expression(value)?;
 
         // Find the buffer's index in `run::Context::buffers`,
@@ -142,12 +137,17 @@ impl Planner {
         let (index, prior) = self.buffers.insert_full(buffer);
         
         let plan: Box<Plan> = if prior {
+            // We've used this buffer already, so we don't need to
+            // create it, just fill it with the given value.
             Box::new(move |ctx: &mut run::Context| {
                 ctx.run_init_buffer(index, &*value_plan)
             })
         } else {
+            // We've never used this buffer before, so create it first
+            // and save it in `Context::buffers`, and then initialize
+            // it.
             let descriptor = wgpu::BufferDescriptor {
-                label: todo!(),
+                label: Some(&buffer_id.kind.to_string()),
                 size: todo!(),
                 usage: todo!(),
                 mapped_at_creation: todo!(),
