@@ -32,7 +32,7 @@ fn main() -> Result<()> {
         }
     };
 
-    let plan = match plan::plan(&program, source_id) {
+    let (plan, summary) = match plan::plan(&program, source_id) {
         Ok(plan) => plan,
         Err(plan_error) => {
             plan_error.write(std::io::stderr(), &mut cache)?;
@@ -40,7 +40,7 @@ fn main() -> Result<()> {
         }
     };
 
-    let mut context = run::Context::create("wscript initial device")?;
+    let mut context = run::Context::create(summary, "wscript initial device")?;
     if let Err(run_error) = plan(&mut context) {
         run_error.write(std::io::stderr(), &mut cache)?;
         std::process::exit(1);

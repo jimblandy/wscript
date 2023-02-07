@@ -13,6 +13,10 @@ pub use error::{Error, ErrorKind, IntoRunResult, Result};
 /// Execution context for wscript programs.
 #[derive(Debug)]
 pub struct Context {
+    /// Statically computed information needed at runtime, that can't be
+    /// captured in the plans.
+    pub summary: plan::Summary,
+
     /// The `wgpu` device to use for execution.
     pub device: wgpu::Device,
 
@@ -27,7 +31,7 @@ pub struct Context {
 }
 
 impl Context {
-    pub fn create(label: &str) -> anyhow::Result<Context> {
+    pub fn create(summary: plan::Summary, label: &str) -> anyhow::Result<Context> {
         let backends = wgpu::util::backend_bits_from_env().unwrap_or_else(wgpu::Backends::all);
         let instance = wgpu::Instance::new(backends);
         let adapter = block_on(wgpu::util::initialize_adapter_from_env_or_default(
@@ -43,6 +47,7 @@ impl Context {
         let (device, queue) = block_on(adapter.request_device(&device_descriptor, None))?;
 
         Ok(Context {
+            summary,
             device,
             queue,
             module: None,
@@ -80,7 +85,7 @@ impl Context {
     pub fn run_init_buffer(
         &mut self,
         buffer_index: usize,
-        value: &plan::BytesPlan,
+        value: Box<dyn plan::ByteSource>,
     ) -> Result<()> {
         /*
         // Find the global to which `buffer` refers.
