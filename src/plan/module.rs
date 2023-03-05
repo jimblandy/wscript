@@ -29,7 +29,7 @@ impl Module {
     }
 
     /// Return the global variable to which `id` refers, if any.
-    pub fn find_buffer(
+    pub fn find_buffer_global(
         &self,
         id: &ast::BufferId,
     ) -> Result<naga::Handle<naga::GlobalVariable>> {

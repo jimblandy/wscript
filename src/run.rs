@@ -27,6 +27,10 @@ pub struct Context {
     pub module: Option<wgpu::ShaderModule>,
 
     /// Buffers we've created so far.
+    ///
+    /// Indices parallel those in [`Planner::buffers`].
+    ///
+    /// [`Planner::buffers`]: crate::plan::PLanner::buffers
     pub buffers: Vec<wgpu::Buffer>,
 }
 

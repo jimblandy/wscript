@@ -20,15 +20,15 @@
 
 mod error;
 mod module;
-mod buffer;
 
 use crate::ast;
 use crate::run;
 use error::IntoPlanResult as _;
 pub use error::{Error, ErrorKind, Result};
+use indexmap::map::Entry;
 pub use module::Module;
 
-use indexmap::IndexSet;
+use indexmap::IndexMap;
 use std::sync::Arc;
 
 /// A source of data to initialize a GPU buffer, or check its contents.
@@ -61,41 +61,52 @@ pub enum Comparison {
 /// [`Context`]: run::Context
 pub type Plan = dyn Fn(&mut run::Context) -> run::Result<()> + 'static;
 
-/// Information used by plans that we can't know until we've seen the
-/// whole script.
+/// Data accumulated over the course of planning the entire scripts.
 ///
-/// Some information, like buffer usage flags, can't be determined
-/// without looking over the entire script. We could make one pass
-/// over the script to gather this information, and then make a second
-/// pass where we build execution plans, but that means a bunch of
-/// decisions need to be either repeated or recorded, and that's a
-/// pain. Alternatively, we could use interior mutability to go back
-/// and update data captured by plans after we've constructed them,
-/// but that's not very Rustic.
+/// Planning a particular operation sometimes needs information that
+/// can only be determined by looking over the entire script. For
+/// example, to create a buffer, we need usage flags that cover
+/// everything the rest of the script may do with it. There are a few
+/// approaches:
 ///
-/// Instead, planning makes a single pass that accumulates this data,
-/// and constructs plans. Then, this data is returned along with the
-/// plan, and incorporated into the `run::Context`, from which plans
-/// retrieve it.
+/// - We could make an initial pass over the script to gather that
+///   data, and then consult it when we build execution plans. But
+///   that means a bunch of decisions need to be either repeated or
+///   recorded, and that's a pain.
+///
+/// - We could build execution plans, and then mutate them as we
+///   discover more details about what they need to do. But this isn't
+///   very Rustic.
+///
+/// - What we actually do is build this `Summary` along with the
+///   execution plans, and then pass the completed `Summary` to the
+///   plans in the `Context` and have the plans get the data they need
+///   from there.
 #[derive(Debug, Default)]
 pub struct Summary {
     /// Usage flags for each buffer.
+    ///
+    /// Indices parallel those in [`Planner::buffers`].
     pub buffer_usage: Vec<wgpu::BufferUsages>,
 }
 
 /// Context for planning script execution.
-///
-/// This holds static information about the current statement being
-/// planned.
 struct Planner {
     /// Static information about the current Naga module, if any.
     module: Option<Arc<Module>>,
 
-    /// A map from a buffer's global handle to its index in [`run::Context::buffers`].
-    buffers: IndexSet<naga::Handle<naga::GlobalVariable>>,
+    /// A map from a buffer's global handle to planning information about it.
+    ///
+    /// This index is used in tables like [`run::Context::buffers`]
+    /// and [`Summary::buffer_usage`].
+    buffers: IndexMap<naga::Handle<naga::GlobalVariable>, Buffer>,
+}
 
-    /// Information we're accumulating about the script.
-    summary: Summary,
+/// Planning information about GPU buffers.
+struct Buffer {
+    global: naga::Handle<naga::GlobalVariable>,
+    ty: naga::Handle<naga::Type>,
+    usage: wgpu::BufferUsages,
 }
 
 pub fn plan(
@@ -113,7 +124,6 @@ impl Planner {
         let mut planner = Self {
             module: None,
             buffers: Default::default(),
-            summary: Default::default(),
         };
 
         let plans = program
@@ -127,7 +137,10 @@ impl Planner {
             }
             Ok(())
         });
-        Ok((plan, planner.summary))
+
+        let summary = todo!();
+
+        Ok((plan, summary))
     }
 
     fn plan_statement(&mut self, statement: &ast::Statement) -> Result<Box<Plan>> {
@@ -143,7 +156,6 @@ impl Planner {
             ast::StatementKind::Check { ref buffer, ref value } => todo!(),
         }
     }
-
 
     fn plan_module(
         &mut self,
@@ -164,62 +176,56 @@ impl Planner {
         value: &ast::Expression,
     ) -> Result<Box<Plan>> {
         let module = self.require_module(statement)?.clone();
-        let types = &module.naga.types;
-        let buffer = module.find_buffer(buffer_id)?;
-        let buffer_global = &module.naga.global_variables[buffer];
+        let handle = module.find_buffer_global(buffer_id)?;
+        let global = &module.naga.global_variables[handle];
+        let value_plan = self.plan_expression(value, &module, global.ty)?;
 
-        let value_plan = self.plan_expression(value, &module, buffer_global.ty)?;
-
-        // Find the buffer's index in `run::Context::buffers`,
-        // assigning it a new one if needed.
-        let (index, prior) = self.buffers.insert_full(buffer);
-        
-        let plan: Box<Plan> = if prior {
-            // We've used this buffer already, so we don't need to
-            // create it, just fill it with the given value.
-            Box::new(move |ctx: &mut run::Context| {
-                let bytes = value_plan(ctx)?;
-                ctx.run_init_buffer(index, bytes)
-            })
-        } else {
-            // We've never used this buffer before, so create it first
-            // and save it in `Context::buffers`, and then initialize
-            // it.
-
-            // Choose the initial usage flags for the buffer. We'll
-            // add to these as we find other uses of the buffer in the
-            // script.
-            use wgpu::BufferUsages as Bu;
-            let usage = match buffer_global.space {
-                naga::AddressSpace::Uniform => Bu::UNIFORM,
-                naga::AddressSpace::Storage { access } => Bu::STORAGE,
-                naga::AddressSpace::Function |
-                naga::AddressSpace::Private |
-                naga::AddressSpace::WorkGroup |
-                naga::AddressSpace::Handle |
-                naga::AddressSpace::PushConstant => {
-                    Bu::empty()
-                }
-            };
-            assert_eq!(index, self.summary.buffer_usage.len());
-            self.summary.buffer_usage.push(usage);
-            
-            let label = buffer_id.kind.to_string();
-            Box::new(move |ctx: &mut run::Context| {
-                let bytes = value_plan(ctx)?;
-                let descriptor = wgpu::BufferDescriptor {
-                    label: Some(&label),
-                    size: bytes.len() as wgpu::BufferAddress,
-                    usage: ctx.summary.buffer_usage[index],
-                    mapped_at_creation: true,
+        Ok(match self.buffers.entry(handle) {
+            Entry::Occupied(occupied) => {
+                let buffer_index = occupied.index();
+                Box::new(move |ctx: &mut run::Context| {
+                    let bytes = value_plan(ctx)?;
+                    ctx.run_init_buffer(buffer_index, bytes)
+                })
+            }
+            Entry::Vacant(vacant) => {
+                // Choose the initial usage flags for the buffer. As we process the rest
+                // of the script, we'll add flags as we learn more about how the buffer
+                // gets used.
+                use wgpu::BufferUsages as Bu;
+                let usage = match global.space {
+                    naga::AddressSpace::Uniform => Bu::UNIFORM,
+                    naga::AddressSpace::Storage { access } => Bu::STORAGE,
+                    naga::AddressSpace::Function |
+                    naga::AddressSpace::Private |
+                    naga::AddressSpace::WorkGroup |
+                    naga::AddressSpace::Handle |
+                    naga::AddressSpace::PushConstant => {
+                        Bu::empty()
+                    }
                 };
 
-                ctx.run_create_buffer(index, &descriptor)?;
-                ctx.run_init_buffer(index, bytes)
-            })
-        };
+                let buffer_index = vacant.index();
+                vacant.insert(Buffer {
+                    global: handle,
+                    ty: global.ty,
+                    usage,
+                });
 
-        Ok(plan)
+                let label = buffer_id.kind.to_string();
+                Box::new(move |ctx: &mut run::Context| {
+                    let bytes = value_plan(ctx)?;
+                    ctx.run_create_buffer(buffer_index, &wgpu::BufferDescriptor {
+                        label: Some(&label),
+                        size: bytes.len() as wgpu::BufferAddress,
+                        usage: ctx.summary.buffer_usage[buffer_index],
+                        mapped_at_creation: true,
+                    })?;
+
+                    ctx.run_init_buffer(buffer_index, bytes)
+                })
+            }
+        })
     }
 
     fn plan_expression(
