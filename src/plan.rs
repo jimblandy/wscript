@@ -44,13 +44,14 @@ pub trait ByteSource {
 }
 
 /// A plan that can construct a [`ByteSource`]
-pub type BytesPlan = dyn Fn(&mut run::Context) -> run::Result<Box<dyn ByteSource + 'static>> + 'static;
+pub type BytesPlan =
+    dyn Fn(&mut run::Context) -> run::Result<Box<dyn ByteSource + 'static>> + 'static;
 
 pub enum Comparison {
     /// This plan's bytes have the given length, and the corresponding
     /// prefix of the input matches.
     Matches { len: usize },
- 
+
     /// This plan's bytes do not match the input, at the given byte offset.
     Mismatch { pos: usize },
 }
@@ -109,18 +110,12 @@ struct Buffer {
     usage: wgpu::BufferUsages,
 }
 
-pub fn plan(
-    program: &ast::Program,
-    source_id: usize,
-) -> Result<(Box<Plan>, Summary)> {
+pub fn plan(program: &ast::Program, source_id: usize) -> Result<(Box<Plan>, Summary)> {
     Planner::plan(program, source_id)
 }
 
 impl Planner {
-    fn plan(
-        program: &ast::Program,
-        source_id: usize,
-    ) -> Result<(Box<Plan>, Summary)> {
+    fn plan(program: &ast::Program, source_id: usize) -> Result<(Box<Plan>, Summary)> {
         let mut planner = Self {
             module: None,
             buffers: Default::default(),
@@ -145,23 +140,23 @@ impl Planner {
 
     fn plan_statement(&mut self, statement: &ast::Statement) -> Result<Box<Plan>> {
         match statement.kind {
-            ast::StatementKind::Module { ref wgsl } => {
-                self.plan_module(statement, wgsl)
-            }
+            ast::StatementKind::Module { ref wgsl } => self.plan_module(statement, wgsl),
             ast::StatementKind::Init {
                 ref buffer,
                 ref value,
             } => self.plan_init(statement, buffer, value),
-            ast::StatementKind::Dispatch { ref entry_point, ref count } => todo!(),
-            ast::StatementKind::Check { ref buffer, ref value } => todo!(),
+            ast::StatementKind::Dispatch {
+                ref entry_point,
+                ref count,
+            } => todo!(),
+            ast::StatementKind::Check {
+                ref buffer,
+                ref value,
+            } => todo!(),
         }
     }
 
-    fn plan_module(
-        &mut self,
-        statement: &ast::Statement,
-        wgsl: &ast::Wgsl,
-    ) -> Result<Box<Plan>> {
+    fn plan_module(&mut self, statement: &ast::Statement, wgsl: &ast::Wgsl) -> Result<Box<Plan>> {
         let module = Module::new(&wgsl.text, statement.span.clone())
             .at(&statement.span, "in this `module` statement")?;
         let module = Arc::new(module);
@@ -196,13 +191,11 @@ impl Planner {
                 let usage = match global.space {
                     naga::AddressSpace::Uniform => Bu::UNIFORM,
                     naga::AddressSpace::Storage { access } => Bu::STORAGE,
-                    naga::AddressSpace::Function |
-                    naga::AddressSpace::Private |
-                    naga::AddressSpace::WorkGroup |
-                    naga::AddressSpace::Handle |
-                    naga::AddressSpace::PushConstant => {
-                        Bu::empty()
-                    }
+                    naga::AddressSpace::Function
+                    | naga::AddressSpace::Private
+                    | naga::AddressSpace::WorkGroup
+                    | naga::AddressSpace::Handle
+                    | naga::AddressSpace::PushConstant => Bu::empty(),
                 };
 
                 let buffer_index = vacant.index();
@@ -215,12 +208,15 @@ impl Planner {
                 let label = buffer_id.kind.to_string();
                 Box::new(move |ctx: &mut run::Context| {
                     let bytes = value_plan(ctx)?;
-                    ctx.run_create_buffer(buffer_index, &wgpu::BufferDescriptor {
-                        label: Some(&label),
-                        size: bytes.len() as wgpu::BufferAddress,
-                        usage: ctx.summary.buffer_usage[buffer_index],
-                        mapped_at_creation: true,
-                    })?;
+                    ctx.run_create_buffer(
+                        buffer_index,
+                        &wgpu::BufferDescriptor {
+                            label: Some(&label),
+                            size: bytes.len() as wgpu::BufferAddress,
+                            usage: ctx.summary.buffer_usage[buffer_index],
+                            mapped_at_creation: true,
+                        },
+                    )?;
 
                     ctx.run_init_buffer(buffer_index, bytes)
                 })
@@ -241,46 +237,47 @@ impl Planner {
         match self.module {
             Some(ref module) => Ok(module),
             None => Err(Error {
-                kind: ErrorKind::NoModule { victim: error::StatementKind::from_ast(victim) },
-                span: victim.span.clone() 
-            })
+                kind: ErrorKind::NoModule {
+                    victim: error::StatementKind::from_ast(victim),
+                },
+                span: victim.span.clone(),
+            }),
         }
     }
 }
 
-
 /*
 
-        // Compute the buffer's size from its type.
-        let var = &naga.global_variables[global];
-        let inner = &naga.types[var.ty].inner;
-        let size = wgpu::BufferAddress::try_from(inner.try_size(&naga.constants)?)?;
+       // Compute the buffer's size from its type.
+       let var = &naga.global_variables[global];
+       let inner = &naga.types[var.ty].inner;
+       let size = wgpu::BufferAddress::try_from(inner.try_size(&naga.constants)?)?;
 
-        // Guess a usage for the buffer from its address space.
-        let usage = match var.space {
-            naga::AddressSpace::Uniform => Bu::UNIFORM | Bu::COPY_DST,
-            naga::AddressSpace::Storage { access } => {
-                let mut usage = Bu::STORAGE;
-                // If the shader is going to read from it, then we'd
-                // better be able to write to it.
-                if access.contains(Sa::LOAD) {
-                    usage |= Bu::COPY_DST;
-                }
+       // Guess a usage for the buffer from its address space.
+       let usage = match var.space {
+           naga::AddressSpace::Uniform => Bu::UNIFORM | Bu::COPY_DST,
+           naga::AddressSpace::Storage { access } => {
+               let mut usage = Bu::STORAGE;
+               // If the shader is going to read from it, then we'd
+               // better be able to write to it.
+               if access.contains(Sa::LOAD) {
+                   usage |= Bu::COPY_DST;
+               }
 
-                // Conversely, if the shader is going to write to it,
-                // then we'd better be able to read from it.
-                if access.contains(Sa::STORE) {
-                    usage |= Bu::COPY_SRC;
-                }
+               // Conversely, if the shader is going to write to it,
+               // then we'd better be able to read from it.
+               if access.contains(Sa::STORE) {
+                   usage |= Bu::COPY_SRC;
+               }
 
-                usage
-            }
+               usage
+           }
 
-            naga::AddressSpace::Handle
-            | naga::AddressSpace::PushConstant
-            | naga::AddressSpace::Function
-            | naga::AddressSpace::Private
-            | naga::AddressSpace::WorkGroup => todo!("error message using spans from statement"),
-        };
+           naga::AddressSpace::Handle
+           | naga::AddressSpace::PushConstant
+           | naga::AddressSpace::Function
+           | naga::AddressSpace::Private
+           | naga::AddressSpace::WorkGroup => todo!("error message using spans from statement"),
+       };
 
- */
+*/

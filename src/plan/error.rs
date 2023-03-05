@@ -59,7 +59,7 @@ impl StatementKind {
             ast::StatementKind::Dispatch { .. } => Self::Dispatch,
             ast::StatementKind::Check { .. } => Self::Check,
             ast::StatementKind::Module { .. } => todo!(),
-        }        
+        }
     }
 }
 

@@ -60,9 +60,11 @@ impl Context {
     }
 
     pub fn expect_module(&self) -> &wgpu::ShaderModule {
-        self.module.as_ref().expect("No Naga module established. This should have been a static error.")
+        self.module
+            .as_ref()
+            .expect("No Naga module established. This should have been a static error.")
     }
-    
+
     pub fn run_module(&mut self, planned: &plan::Module) -> Result<()> {
         let wgpu = self
             .device
@@ -78,11 +80,7 @@ impl Context {
         Ok(())
     }
 
-    pub fn run_create_buffer(
-        &mut self,
-        index: usize,
-        desc: &wgpu::BufferDescriptor,
-    ) -> Result<()> {
+    pub fn run_create_buffer(&mut self, index: usize, desc: &wgpu::BufferDescriptor) -> Result<()> {
         todo!()
     }
 
@@ -135,10 +133,7 @@ pub struct Buffer {
 }
 
 impl Buffer {
-    fn new(
-        device: &wgpu::Device,
-        descriptor: &wgpu::BufferDescriptor,
-    ) -> anyhow::Result<Buffer> {
+    fn new(device: &wgpu::Device, descriptor: &wgpu::BufferDescriptor) -> anyhow::Result<Buffer> {
         let wgpu = device.create_buffer(descriptor);
         Ok(Buffer {
             wgpu,

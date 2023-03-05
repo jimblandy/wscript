@@ -62,12 +62,13 @@ impl error::AriadneReport for Error {
         config: ariadne::Config,
     ) -> io::Result<()>
     where
-        W: io::Write 
+        W: io::Write,
     {
         use ariadne::{Report, ReportKind};
 
         let (source_id, range) = self.span.clone();
-        let mut builder = Report::<Span>::build(ReportKind::Error, source_id, range.start).with_config(config);
+        let mut builder =
+            Report::<Span>::build(ReportKind::Error, source_id, range.start).with_config(config);
 
         match self.kind {
             ErrorKind::Anyhow {
