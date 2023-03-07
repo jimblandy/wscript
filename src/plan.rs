@@ -16,45 +16,24 @@
 //!
 //! [`Context`]: run::Context
 
-#![allow(unreachable_code, unused_variables)]
+#![allow(unreachable_code, unused_variables, dead_code)]
 
 mod error;
+mod expr;
 mod module;
 
 use crate::ast;
 use crate::run;
 use error::IntoPlanResult as _;
 pub use error::{Error, ErrorKind, Result};
+pub use expr::ByteSource;
 use indexmap::map::Entry;
 pub use module::Module;
 
 use indexmap::IndexMap;
 use std::sync::Arc;
 
-/// A source of data to initialize a GPU buffer, or check its contents.
-pub trait ByteSource {
-    /// Return the remaining number of bytes this plan will generate.
-    fn len(&self) -> usize;
 
-    /// Fill `buf` with the next `buf.len()` bytes from this source.
-    fn fill(&mut self, buf: &mut [u8]) -> run::Result<()>;
-
-    /// Check `buf` against the next `buf.len()` bytes from this source.
-    fn check(&mut self, buf: &[u8]) -> run::Result<Comparison>;
-}
-
-/// A plan that can construct a [`ByteSource`]
-pub type BytesPlan =
-    dyn Fn(&mut run::Context) -> run::Result<Box<dyn ByteSource + 'static>> + 'static;
-
-pub enum Comparison {
-    /// This plan's bytes have the given length, and the corresponding
-    /// prefix of the input matches.
-    Matches { len: usize },
-
-    /// This plan's bytes do not match the input, at the given byte offset.
-    Mismatch { pos: usize },
-}
 
 /// A `Plan` is a closure that runs a script, given a [`Context`].
 /// It may fail, returning a `run::Error`.
@@ -177,6 +156,8 @@ impl Planner {
 
         Ok(match self.buffers.entry(handle) {
             Entry::Occupied(occupied) => {
+                // We've already created this buffer, we're just overwriting its
+                // contents.
                 let buffer_index = occupied.index();
                 Box::new(move |ctx: &mut run::Context| {
                     let bytes = value_plan(ctx)?;
@@ -184,25 +165,17 @@ impl Planner {
                 })
             }
             Entry::Vacant(vacant) => {
-                // Choose the initial usage flags for the buffer. As we process the rest
-                // of the script, we'll add flags as we learn more about how the buffer
-                // gets used.
-                use wgpu::BufferUsages as Bu;
-                let usage = match global.space {
-                    naga::AddressSpace::Uniform => Bu::UNIFORM,
-                    naga::AddressSpace::Storage { access } => Bu::STORAGE,
-                    naga::AddressSpace::Function
-                    | naga::AddressSpace::Private
-                    | naga::AddressSpace::WorkGroup
-                    | naga::AddressSpace::Handle
-                    | naga::AddressSpace::PushConstant => Bu::empty(),
-                };
-
                 let buffer_index = vacant.index();
+
+                // We're creating and initializing the buffer.
+                //
+                // Choose initial usage flags for the buffer. As we process the
+                // rest of the script, we'll add more flags as we learn more
+                // about how the buffer gets used.
                 vacant.insert(Buffer {
                     global: handle,
                     ty: global.ty,
-                    usage,
+                    usage: initial_buffer_usage_from_space(global.space),
                 });
 
                 let label = buffer_id.kind.to_string();
@@ -224,15 +197,6 @@ impl Planner {
         })
     }
 
-    fn plan_expression(
-        &mut self,
-        expr: &ast::Expression,
-        module: &Module,
-        expected_type: naga::Handle<naga::Type>,
-    ) -> Result<Box<BytesPlan>> {
-        todo!()
-    }
-
     fn require_module(&self, victim: &ast::Statement) -> Result<&Arc<Module>> {
         match self.module {
             Some(ref module) => Ok(module),
@@ -246,38 +210,33 @@ impl Planner {
     }
 }
 
-/*
+/// Given a buffer's address space, choose its initial usage flags.
+fn initial_buffer_usage_from_space(space: naga::AddressSpace) -> wgpu::BufferUsages {
+    use wgpu::BufferUsages as Bu;
+    use naga::StorageAccess as Sa;
 
-       // Compute the buffer's size from its type.
-       let var = &naga.global_variables[global];
-       let inner = &naga.types[var.ty].inner;
-       let size = wgpu::BufferAddress::try_from(inner.try_size(&naga.constants)?)?;
+    match space {
+        naga::AddressSpace::Uniform => Bu::UNIFORM,
+        naga::AddressSpace::Storage { access } => {
+            let mut usage = Bu::STORAGE;
+            // If the shader is going to read from it, then we'd
+            // better be able to write to it.
+            if access.contains(Sa::LOAD) {
+                usage |= Bu::COPY_DST;
+            }
 
-       // Guess a usage for the buffer from its address space.
-       let usage = match var.space {
-           naga::AddressSpace::Uniform => Bu::UNIFORM | Bu::COPY_DST,
-           naga::AddressSpace::Storage { access } => {
-               let mut usage = Bu::STORAGE;
-               // If the shader is going to read from it, then we'd
-               // better be able to write to it.
-               if access.contains(Sa::LOAD) {
-                   usage |= Bu::COPY_DST;
-               }
+            // Conversely, if the shader is going to write to it,
+            // then we'd better be able to read from it.
+            if access.contains(Sa::STORE) {
+                usage |= Bu::COPY_SRC;
+            }
 
-               // Conversely, if the shader is going to write to it,
-               // then we'd better be able to read from it.
-               if access.contains(Sa::STORE) {
-                   usage |= Bu::COPY_SRC;
-               }
-
-               usage
-           }
-
-           naga::AddressSpace::Handle
-           | naga::AddressSpace::PushConstant
-           | naga::AddressSpace::Function
-           | naga::AddressSpace::Private
-           | naga::AddressSpace::WorkGroup => todo!("error message using spans from statement"),
-       };
-
-*/
+            usage
+        }
+        naga::AddressSpace::Function
+            | naga::AddressSpace::Private
+            | naga::AddressSpace::WorkGroup
+            | naga::AddressSpace::Handle
+            | naga::AddressSpace::PushConstant => Bu::empty(),
+    }
+}
