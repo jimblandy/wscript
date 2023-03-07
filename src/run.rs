@@ -31,7 +31,7 @@ pub struct Context {
     /// Indices parallel those in [`Planner::buffers`].
     ///
     /// [`Planner::buffers`]: crate::plan::PLanner::buffers
-    pub buffers: Vec<wgpu::Buffer>,
+    pub buffers: Vec<Buffer>,
 }
 
 impl Context {
@@ -80,33 +80,43 @@ impl Context {
         Ok(())
     }
 
-    pub fn run_create_buffer(&mut self, index: usize, desc: &wgpu::BufferDescriptor) -> Result<()> {
-        todo!()
+    pub fn run_create_buffer(
+        &mut self,
+        buffer_index: usize,
+        id: ast::BufferId,
+        value: &dyn plan::ByteSource,
+    ) -> Result<()> {
+        // Newly created buffers should always be at the end of the array.
+        assert_eq!(buffer_index, self.buffers.len());
+        let label = id.kind.to_string();
+        let desc = wgpu::BufferDescriptor {
+            label: Some(&label),
+            size: value.len() as wgpu::BufferAddress,
+            usage: self.summary.buffer_usage[buffer_index],
+            mapped_at_creation: true,
+        };
+        self.buffers.push(Buffer::new(&self.device, &desc, id));
+        Ok(())
     }
 
     pub fn run_init_buffer(
         &mut self,
         buffer_index: usize,
-        value: Box<dyn plan::ByteSource>,
+        mut value: Box<dyn plan::ByteSource>,
+        span: &ast::Span,
     ) -> Result<()> {
-        /*
-        // Find the global to which `buffer` refers.
-        let global = self.module.planned.find_buffer(buffer)?;
-
-        // Create the buffer, if necessary.
-        if let std::collections::hash_map::Entry::Vacant(e) = self.buffers.entry(global) {
-            let buffer = Buffer::new(&self.device, &self.module, true)
-                .at(stmt, "creating buffer for this `buffer` statement")?;
-            e.insert(buffer);
-        }
-
-        let buffer = self.buffers.get(&global).unwrap();
+        let buffer = &self.buffers[buffer_index];
         let slice = buffer
             .wait_until_mapped(self, .., wgpu::MapMode::Write)
-            .at(stmt, "waiting to map buffer")?;
-        let view = slice.get_mapped_range_mut();
-         */
-        todo!()
+            .at(span, "mapping buffer for initialization")?;
+        let mut view = slice.get_mapped_range_mut();
+        value.fill(&mut view, 0).map_err(|inner| Error {
+            span: span.clone(),
+            kind: ErrorKind::Init {
+                inner: Box::new(inner),
+                buffer: buffer.id.kind.to_string(),
+            },
+        })
     }
 
     fn run_dispatch(
@@ -130,15 +140,23 @@ pub struct Buffer {
 
     /// True if currently mapped.
     mapped: bool,
+
+    /// The way the buffer was named when it was first initialized.
+    id: ast::BufferId,
 }
 
 impl Buffer {
-    fn new(device: &wgpu::Device, descriptor: &wgpu::BufferDescriptor) -> anyhow::Result<Buffer> {
+    fn new(
+        device: &wgpu::Device,
+        descriptor: &wgpu::BufferDescriptor,
+        id: ast::BufferId,
+    ) -> Buffer {
         let wgpu = device.create_buffer(descriptor);
-        Ok(Buffer {
+        Buffer {
             wgpu,
             mapped: descriptor.mapped_at_creation,
-        })
+            id,
+        }
     }
 
     pub fn wait_until_mapped<S>(

@@ -14,6 +14,15 @@ pub type Result<T> = std::result::Result<T, Error>;
 
 #[derive(Debug)]
 pub enum ErrorKind {
+    /// The error `inner` occurred while executing an `init` statement.
+    Init {
+        /// The error that occurred during expression evaluation.
+        inner: Box<crate::plan::expr::Error>,
+
+        /// The id of the buffer we were trying to initialize.
+        buffer: String,
+    },
+
     /// An `anyhow` error.
     //
     // It's a little odd to use `anyhow::Error` this way, since its
@@ -57,7 +66,7 @@ impl<T> IntoRunResult<T> for anyhow::Result<T> {
 impl error::AriadneReport for Error {
     fn write_with_config<W>(
         &self,
-        stream: W,
+        mut stream: W,
         cache: &mut error::Cache,
         config: ariadne::Config,
     ) -> io::Result<()>
@@ -76,6 +85,20 @@ impl error::AriadneReport for Error {
                 ref context,
             } => {
                 builder.set_message(format!("Error in {context}: {error}"));
+            }
+            ErrorKind::Init {
+                ref inner,
+                ref buffer,
+            } => {
+                inner.write_with_config(&mut stream, cache, config)?;
+                builder.add_label(
+                    ariadne::Label::new(self.span.clone())
+                        .with_message(format!("while initializing buffer {buffer}")),
+                );
+                builder.add_label(
+                    ariadne::Label::new(self.span.clone())
+                        .with_message("while executing this statement"),
+                );
             }
         }
 

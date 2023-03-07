@@ -19,14 +19,14 @@
 #![allow(unreachable_code, unused_variables, dead_code)]
 
 mod error;
-mod expr;
+pub mod expr;
 mod module;
 
 use crate::ast;
 use crate::run;
 use error::IntoPlanResult as _;
 pub use error::{Error, ErrorKind, Result};
-pub use expr::ByteSource;
+pub use expr::{ByteSource, BytesPlan};
 use indexmap::map::Entry;
 pub use module::Module;
 
@@ -121,7 +121,7 @@ impl Planner {
             ast::StatementKind::Init {
                 ref buffer,
                 ref value,
-            } => self.plan_init(statement, buffer, value),
+            } => self.plan_init(statement, buffer.clone(), value),
             ast::StatementKind::Dispatch {
                 ref entry_point,
                 ref count,
@@ -144,22 +144,31 @@ impl Planner {
     fn plan_init(
         &mut self,
         statement: &ast::Statement,
-        buffer_id: &ast::BufferId,
+        buffer_id: ast::BufferId,
         value: &ast::Expression,
     ) -> Result<Box<Plan>> {
         let module = self.require_module(statement)?.clone();
-        let handle = module.find_buffer_global(buffer_id)?;
+        let handle = module.find_buffer_global(&buffer_id)?;
         let global = &module.naga.global_variables[handle];
-        let value_plan = self.plan_expression(value, &module, global.ty)?;
+        let value_plan = self
+            .plan_expression(value, &module, global.ty)
+            .map_err(|inner| todo!())?;
 
+        let span = statement.span.clone();
         Ok(match self.buffers.entry(handle) {
             Entry::Occupied(occupied) => {
                 // We've already created this buffer, we're just overwriting its
                 // contents.
                 let buffer_index = occupied.index();
                 Box::new(move |ctx: &mut run::Context| {
-                    let bytes = value_plan(ctx)?;
-                    ctx.run_init_buffer(buffer_index, bytes)
+                    let bytes = value_plan(ctx).map_err(|inner| run::Error {
+                        span: span.clone(),
+                        kind: run::ErrorKind::Init {
+                            inner: Box::new(inner),
+                            buffer: buffer_id.kind.to_string(),
+                        },
+                    })?;
+                    ctx.run_init_buffer(buffer_index, bytes, &span)
                 })
             }
             Entry::Vacant(vacant) => {
@@ -176,20 +185,18 @@ impl Planner {
                     usage: initial_buffer_usage_from_space(global.space),
                 });
 
-                let label = buffer_id.kind.to_string();
                 Box::new(move |ctx: &mut run::Context| {
-                    let bytes = value_plan(ctx)?;
-                    ctx.run_create_buffer(
-                        buffer_index,
-                        &wgpu::BufferDescriptor {
-                            label: Some(&label),
-                            size: bytes.len() as wgpu::BufferAddress,
-                            usage: ctx.summary.buffer_usage[buffer_index],
-                            mapped_at_creation: true,
-                        },
-                    )?;
+                    let bytes: Box<dyn ByteSource + 'static> =
+                        value_plan(ctx).map_err(|inner| run::Error {
+                            span: span.clone(),
+                            kind: run::ErrorKind::Init {
+                                inner: Box::new(inner),
+                                buffer: buffer_id.kind.to_string(),
+                            },
+                        })?;
+                    ctx.run_create_buffer(buffer_index, buffer_id.clone(), &*bytes)?;
 
-                    ctx.run_init_buffer(buffer_index, bytes)
+                    ctx.run_init_buffer(buffer_index, bytes, &span)
                 })
             }
         })
