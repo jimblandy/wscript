@@ -33,8 +33,6 @@ pub use module::Module;
 use indexmap::IndexMap;
 use std::sync::Arc;
 
-
-
 /// A `Plan` is a closure that runs a script, given a [`Context`].
 /// It may fail, returning a `run::Error`.
 ///
@@ -212,8 +210,8 @@ impl Planner {
 
 /// Given a buffer's address space, choose its initial usage flags.
 fn initial_buffer_usage_from_space(space: naga::AddressSpace) -> wgpu::BufferUsages {
-    use wgpu::BufferUsages as Bu;
     use naga::StorageAccess as Sa;
+    use wgpu::BufferUsages as Bu;
 
     match space {
         naga::AddressSpace::Uniform => Bu::UNIFORM,
@@ -234,9 +232,9 @@ fn initial_buffer_usage_from_space(space: naga::AddressSpace) -> wgpu::BufferUsa
             usage
         }
         naga::AddressSpace::Function
-            | naga::AddressSpace::Private
-            | naga::AddressSpace::WorkGroup
-            | naga::AddressSpace::Handle
-            | naga::AddressSpace::PushConstant => Bu::empty(),
+        | naga::AddressSpace::Private
+        | naga::AddressSpace::WorkGroup
+        | naga::AddressSpace::Handle
+        | naga::AddressSpace::PushConstant => Bu::empty(),
     }
 }
