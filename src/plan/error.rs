@@ -122,7 +122,8 @@ impl error::AriadneReport for Error {
                 ref error,
                 ref context,
             } => {
-                b.set_message(format!("Error in {}: {}", context, error));
+                label(b, &self.span, context);
+                b.set_message(error.to_string());
             }
         }
 
