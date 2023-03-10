@@ -68,6 +68,13 @@ pub enum ErrorKind {
     },
 }
 
+struct ExprPlanner<'p, 'e> {
+    planner: &'p mut Planner,
+    expr_span: &'e Span,
+    module: &'p Module,
+    expected_type: naga::Handle<naga::Type>,
+}
+
 impl Planner {
     pub(super) fn plan_expression(
         &mut self,
@@ -75,9 +82,20 @@ impl Planner {
         module: &Module,
         expected_type: naga::Handle<naga::Type>,
     ) -> super::Result<Box<BytesPlan>> {
+        ExprPlanner {
+            planner: self,
+            expr_span: &expr.span,
+            module,
+            expected_type,
+        }.plan(expr)
+    }
+}
+
+impl ExprPlanner<'_, '_> {
+    fn plan(&mut self, expr: &ast::Expression) -> super::Result<Box<BytesPlan>> {
         match expr.kind {
             ast::ExpressionKind::Literal(n) => {
-                self.plan_literal(n, &expr.span, module, expected_type)
+                self.plan_literal(n)
             }
             ast::ExpressionKind::Sequence(_) => todo!(),
             ast::ExpressionKind::Unary {
@@ -86,10 +104,10 @@ impl Planner {
             } => todo!(),
             ast::ExpressionKind::Binary {
                 ref left,
-                ref op,
+                op,
                 ref op_span,
                 ref right,
-            } => todo!(),
+            } => self.plan_binary(left, op, op_span, right),
             ast::ExpressionKind::Nullary(_) => todo!(),
             ast::ExpressionKind::Vec(_) => todo!(),
         }
@@ -98,35 +116,50 @@ impl Planner {
     fn plan_literal(
         &mut self,
         n: f64,
-        expr: &Span,
-        module: &Module,
-        expected_type: naga::Handle<naga::Type>,
     ) -> super::Result<Box<BytesPlan>> {
         use naga::ScalarKind as Sk;
         use naga::TypeInner as Ti;
-        match module.naga.types[expected_type].inner {
+
+        match self.module.naga.types[self.expected_type].inner {
             Ti::Scalar {
                 kind: Sk::Float,
                 width,
             } => match width {
-                4 => Ok(Literal::<f32>::plan(n as f32, expr)),
+                4 => Ok(Literal::<f32>::plan(n as f32, self.expr_span)),
                 _ => Err(todo!()),
             },
             Ti::Scalar {
                 kind: Sk::Uint,
                 width,
             } => match width {
-                4 => Ok(Literal::<u32>::plan(n as u32, expr)),
+                4 => Ok(Literal::<u32>::plan(n as u32, self.expr_span)),
                 _ => Err(todo!()),
             },
             Ti::Scalar {
                 kind: Sk::Sint,
                 width,
             } => match width {
-                4 => Ok(Literal::<i32>::plan(n as i32, expr)),
+                4 => Ok(Literal::<i32>::plan(n as i32, self.expr_span)),
                 _ => Err(todo!()),
             },
             _ => Err(todo!()),
+        }
+    }
+
+    fn plan_binary(
+        &mut self,
+        left: &ast::Expression,
+        op: ast::BinaryOp,
+        op_span: &Span,
+        right: &ast::Expression,
+    ) -> super::Result<Box<BytesPlan>> {
+        match op {
+            ast::BinaryOp::Range => todo!(),
+            ast::BinaryOp::Add => todo!(),
+            ast::BinaryOp::Subtract => todo!(),
+            ast::BinaryOp::Multiply => todo!(),
+            ast::BinaryOp::Divide => todo!(),
+            ast::BinaryOp::Remainder => todo!(),
         }
     }
 }
@@ -154,7 +187,7 @@ where
 
 impl<T> ByteSource for Literal<T>
 where
-    T: ToLeBytes + Copy,
+    T: LeBytes + Copy,
 {
     fn len(&self) -> usize {
         std::mem::size_of_val(&self.value)
@@ -171,11 +204,12 @@ where
     }
 }
 
-trait ToLeBytes: Sized {
+trait LeBytes: Sized {
     type Bytes: AsRef<[u8]>;
     const NAME: &'static str;
 
     fn to_le_bytes(self) -> Self::Bytes;
+    fn from_le_bytes(bytes: Self::Bytes) -> Self;
 
     fn check(&self, buf: &[u8], offset: usize, span: &Span) -> Result<()> {
         let needed = std::mem::size_of::<Self>();
@@ -197,12 +231,16 @@ trait ToLeBytes: Sized {
 macro_rules! impl_to_le_bytes {
     ( $( $t:ty ),* ) => {
         $(
-            impl ToLeBytes for $t {
+            impl LeBytes for $t {
                 type Bytes = [u8; std::mem::size_of::<$t>()];
                 const NAME: &'static str = stringify!($t);
 
                 fn to_le_bytes(self) -> Self::Bytes {
                     self.to_le_bytes()
+                }
+
+                fn from_le_bytes(bytes: Self::Bytes) -> Self {
+                    todo!()
                 }
             }
         )*

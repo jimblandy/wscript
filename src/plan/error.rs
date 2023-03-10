@@ -122,8 +122,13 @@ impl error::AriadneReport for Error {
                 ref error,
                 ref context,
             } => {
+                use std::fmt::Write;
+                let mut full_message = String::new();
+                for cause in error.chain() {
+                    writeln!(&mut full_message, "{}", cause).unwrap();
+                }
                 label(b, &self.span, context);
-                b.set_message(error.to_string());
+                b.set_message(full_message);
             }
         }
 
