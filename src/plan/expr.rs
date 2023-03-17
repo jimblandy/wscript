@@ -1,9 +1,18 @@
 //! Planning expression evaluation.
 #![allow(unused_imports)]
 
-use super::{Module, Planner};
+use super::{LeBytes, Module, Planner};
 use crate::{ast, error, run};
 use ast::Span;
+
+struct ExprPlanner<'p> {
+    planner: &'p mut Planner,
+    module: &'p Module,
+    expected_type: naga::Handle<naga::Type>,
+}
+
+/// A plan that can construct a value of type `T`.
+pub type ValuePlan<T> = dyn Fn(&mut run::Context) -> Result<T>;
 
 /// A plan that can construct a [`ByteSource`].
 pub type BytesPlan = dyn Fn(&mut run::Context) -> Result<Box<dyn ByteSource + 'static>> + 'static;
@@ -68,82 +77,59 @@ pub enum ErrorKind {
     },
 }
 
-struct ExprPlanner<'p, 'e> {
-    planner: &'p mut Planner,
-    expr_span: &'e Span,
-    module: &'p Module,
-    expected_type: naga::Handle<naga::Type>,
-}
-
-impl Planner {
-    pub(super) fn plan_expression(
-        &mut self,
-        expr: &ast::Expression,
-        module: &Module,
-        expected_type: naga::Handle<naga::Type>,
-    ) -> super::Result<Box<BytesPlan>> {
-        ExprPlanner {
-            planner: self,
-            expr_span: &expr.span,
-            module,
-            expected_type,
-        }.plan(expr)
-    }
-}
-
-impl ExprPlanner<'_, '_> {
-    fn plan(&mut self, expr: &ast::Expression) -> super::Result<Box<BytesPlan>> {
-        match expr.kind {
-            ast::ExpressionKind::Literal(n) => {
-                self.plan_literal(n)
-            }
-            ast::ExpressionKind::Sequence(_) => todo!(),
-            ast::ExpressionKind::Unary {
-                ref op,
-                ref operand,
-            } => todo!(),
-            ast::ExpressionKind::Binary {
-                ref left,
-                op,
-                ref op_span,
-                ref right,
-            } => self.plan_binary(left, op, op_span, right),
-            ast::ExpressionKind::Nullary(_) => todo!(),
-            ast::ExpressionKind::Vec(_) => todo!(),
-        }
-    }
-
-    fn plan_literal(
-        &mut self,
-        n: f64,
-    ) -> super::Result<Box<BytesPlan>> {
+impl ExprPlanner<'_> {
+    fn plan_bytes(&mut self, expr: &ast::Expression) -> super::Result<Box<BytesPlan>> {
         use naga::ScalarKind as Sk;
         use naga::TypeInner as Ti;
 
+        // Scalar and vector values we can just evaluate as values and
+        // then convert to bytes.
         match self.module.naga.types[self.expected_type].inner {
             Ti::Scalar {
                 kind: Sk::Float,
-                width,
-            } => match width {
-                4 => Ok(Literal::<f32>::plan(n as f32, self.expr_span)),
-                _ => Err(todo!()),
-            },
-            Ti::Scalar {
-                kind: Sk::Uint,
-                width,
-            } => match width {
-                4 => Ok(Literal::<u32>::plan(n as u32, self.expr_span)),
-                _ => Err(todo!()),
-            },
+                width: 4,
+            } => return self.plan_scalar_bytes::<f32>(expr),
             Ti::Scalar {
                 kind: Sk::Sint,
-                width,
-            } => match width {
-                4 => Ok(Literal::<i32>::plan(n as i32, self.expr_span)),
-                _ => Err(todo!()),
-            },
-            _ => Err(todo!()),
+                width: 4,
+            } => return self.plan_scalar_bytes::<i32>(expr),
+            Ti::Scalar {
+                kind: Sk::Uint,
+                width: 4,
+            } => return self.plan_scalar_bytes::<u32>(expr),
+            _ => todo!(),
         }
+    }
+
+    fn plan_value<T>(&mut self, expr: &ast::Expression) -> super::Result<Box<ValuePlan<T>>> {
+        use naga::ScalarKind as Sk;
+        use naga::TypeInner as Ti;
+
+        // Scalar and vector values we can just evaluate as values and
+        // then convert to bytes.
+        match self.module.naga.types[self.expected_type].inner {
+            Ti::Scalar {
+                kind: Sk::Float,
+                width: 4,
+            } => todo!(),
+            _ => todo!(),
+        }
+    }
+
+    fn plan_scalar_bytes<T: LeBytes + 'static>(
+        &mut self,
+        expr: &ast::Expression,
+    ) -> super::Result<Box<BytesPlan>> {
+        let value_plan: Box<ValuePlan<T>> = self.plan_value(expr)?;
+        let span = expr.span.clone();
+        Ok(Box::new(move |ctx: &mut run::Context| {
+            let value = value_plan(ctx)?;
+            Ok(Box::new(Bytes {
+                bytes: value.to_le_bytes(),
+                span: span.clone(),
+                type_name: T::WGSL_NAME,
+            }))
+        }))
     }
 
     fn plan_binary(
@@ -154,7 +140,9 @@ impl ExprPlanner<'_, '_> {
         right: &ast::Expression,
     ) -> super::Result<Box<BytesPlan>> {
         match op {
-            ast::BinaryOp::Range => todo!(),
+            ast::BinaryOp::Range => {
+                let left_plan = todo!();
+            }
             ast::BinaryOp::Add => todo!(),
             ast::BinaryOp::Subtract => todo!(),
             ast::BinaryOp::Multiply => todo!(),
@@ -165,37 +153,41 @@ impl ExprPlanner<'_, '_> {
 }
 
 #[derive(Clone)]
-struct Literal<T> {
-    value: T,
+struct Bytes<B: AsRef<[u8]>> {
+    bytes: B,
 
     /// The span of the expression that produced this value.
     span: Span,
+
+    /// The name of the type of value that said expression produces.
+    type_name: &'static str,
 }
 
-impl<T: Clone + 'static> Literal<T>
+fn plan_value_bytes<V>(value: V, span: &Span) -> Box<BytesPlan>
 where
-    Literal<T>: ByteSource,
+    V: LeBytes + Copy + 'static,
 {
-    fn plan(n: T, span: &Span) -> Box<BytesPlan> {
-        let byte_source = Literal {
-            value: n,
+    let span = span.clone();
+    Box::new(move |_: &mut run::Context| {
+        Ok(Box::new(Bytes {
+            bytes: value.to_le_bytes(),
             span: span.clone(),
-        };
-        Box::new(move |ctx: &mut run::Context| Ok(Box::new(byte_source.clone())))
-    }
+            type_name: V::WGSL_NAME,
+        }))
+    })
 }
 
-impl<T> ByteSource for Literal<T>
+impl<B> ByteSource for Bytes<B>
 where
-    T: LeBytes + Copy,
+    B: AsRef<[u8]>,
 {
     fn len(&self) -> usize {
-        std::mem::size_of_val(&self.value)
+        self.bytes.as_ref().len()
     }
 
     fn fill(&mut self, buf: &mut [u8], offset: usize) -> Result<()> {
-        self.value.check(buf, offset, &self.span)?;
-        buf[..self.len()].copy_from_slice(self.value.to_le_bytes().as_ref());
+        self.check(buf, offset)?;
+        buf[..self.len()].copy_from_slice(self.bytes.as_ref());
         Ok(())
     }
 
@@ -204,20 +196,14 @@ where
     }
 }
 
-trait LeBytes: Sized {
-    type Bytes: AsRef<[u8]>;
-    const NAME: &'static str;
-
-    fn to_le_bytes(self) -> Self::Bytes;
-    fn from_le_bytes(bytes: Self::Bytes) -> Self;
-
-    fn check(&self, buf: &[u8], offset: usize, span: &Span) -> Result<()> {
-        let needed = std::mem::size_of::<Self>();
+impl<B: AsRef<[u8]>> Bytes<B> {
+    fn check(&self, buf: &[u8], offset: usize) -> Result<()> {
+        let needed = std::mem::size_of::<B>();
         if buf.len() < needed {
             return Err(Error {
-                span: span.clone(),
+                span: self.span.clone(),
                 kind: ErrorKind::BufferTooShort {
-                    type_name: Self::NAME,
+                    type_name: self.type_name,
                     needed,
                     available: buf.len(),
                     offset,
@@ -227,27 +213,6 @@ trait LeBytes: Sized {
         Ok(())
     }
 }
-
-macro_rules! impl_to_le_bytes {
-    ( $( $t:ty ),* ) => {
-        $(
-            impl LeBytes for $t {
-                type Bytes = [u8; std::mem::size_of::<$t>()];
-                const NAME: &'static str = stringify!($t);
-
-                fn to_le_bytes(self) -> Self::Bytes {
-                    self.to_le_bytes()
-                }
-
-                fn from_le_bytes(bytes: Self::Bytes) -> Self {
-                    todo!()
-                }
-            }
-        )*
-    }
-}
-
-impl_to_le_bytes!(f32, i32, u32);
 
 impl error::AriadneReport for Error {
     fn write_with_config<W>(
@@ -284,5 +249,35 @@ impl error::AriadneReport for Error {
 
         let report = builder.finish();
         report.write(cache, stream)
+    }
+}
+
+impl Planner {
+    pub(super) fn plan_expression_bytes(
+        &mut self,
+        expr: &ast::Expression,
+        module: &Module,
+        expected_type: naga::Handle<naga::Type>,
+    ) -> super::Result<Box<BytesPlan>> {
+        ExprPlanner {
+            planner: self,
+            module,
+            expected_type,
+        }
+        .plan_bytes(expr)
+    }
+
+    pub(super) fn plan_expression_value<T>(
+        &mut self,
+        expr: &ast::Expression,
+        module: &Module,
+        expected_type: naga::Handle<naga::Type>,
+    ) -> super::Result<Box<ValuePlan<T>>> {
+        ExprPlanner {
+            planner: self,
+            module,
+            expected_type,
+        }
+        .plan_value(expr)
     }
 }
