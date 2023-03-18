@@ -31,3 +31,8 @@ similar = "2.2"
 name = "errors"
 path = "tests/errors.rs"
 harness = false
+
+[[test]]
+name = "run"
+path = "tests/run.rs"
+harness = false
