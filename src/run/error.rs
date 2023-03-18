@@ -17,7 +17,7 @@ pub enum ErrorKind {
     /// The error `inner` occurred while executing an `init` statement.
     Init {
         /// The error that occurred during expression evaluation.
-        inner: Box<crate::plan::expr::Error>,
+        inner: Box<crate::plan::ExprError>,
 
         /// The id of the buffer we were trying to initialize.
         buffer: String,

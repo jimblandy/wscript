@@ -19,7 +19,7 @@
 #![allow(unreachable_code, unused_variables, dead_code)]
 
 mod error;
-pub mod expr;
+mod expr;
 mod little_endian_bytes;
 mod module;
 
@@ -27,7 +27,8 @@ use crate::ast;
 use crate::run;
 use error::IntoPlanResult as _;
 pub use error::{Error, ErrorKind, Result};
-pub use expr::{ByteSource, BytesPlan};
+pub use expr::ByteSource;
+pub use expr::Error as ExprError;
 use indexmap::map::Entry;
 use little_endian_bytes::LeBytes;
 pub use module::Module;
@@ -112,7 +113,13 @@ impl Planner {
             Ok(())
         });
 
-        let summary = todo!();
+        let summary = Summary {
+            buffer_usage: planner
+                .buffers
+                .iter()
+                .map(|(index, buffer)| buffer.usage)
+                .collect(),
+        };
 
         Ok((plan, summary))
     }
@@ -152,8 +159,7 @@ impl Planner {
         let module = self.require_module(statement)?.clone();
         let handle = module.find_buffer_global(&buffer_id)?;
         let global = &module.naga.global_variables[handle];
-        let bytes_plan = self
-            .plan_expression_bytes(value, &module, global.ty)
+        let bytes_plan = expr::plan_expression_bytes(self, value, &module, global.ty)
             .map_err(|inner| todo!())?;
 
         let span = statement.span.clone();
@@ -188,7 +194,7 @@ impl Planner {
                 });
 
                 Box::new(move |ctx: &mut run::Context| {
-                    let bytes: Box<dyn ByteSource + 'static> =
+                    let bytes: Box<dyn expr::ByteSource + 'static> =
                         bytes_plan(ctx).map_err(|inner| run::Error {
                             span: span.clone(),
                             kind: run::ErrorKind::Init {

@@ -34,6 +34,19 @@ pub struct Context {
     pub buffers: Vec<Buffer>,
 }
 
+/// Runtime information about a WebGPU buffer.
+#[derive(Debug)]
+pub struct Buffer {
+    /// The underlying `wgpu` buffer.
+    wgpu: wgpu::Buffer,
+
+    /// True if currently mapped.
+    mapped: bool,
+
+    /// The way the buffer was named when it was first initialized.
+    id: ast::BufferId,
+}
+
 impl Context {
     pub fn create(summary: plan::Summary, label: &str) -> anyhow::Result<Context> {
         let backends = wgpu::util::backend_bits_from_env().unwrap_or_else(wgpu::Backends::all);
@@ -105,18 +118,27 @@ impl Context {
         mut value: Box<dyn plan::ByteSource>,
         span: &ast::Span,
     ) -> Result<()> {
-        let buffer = &self.buffers[buffer_index];
+        let buffer = &mut self.buffers[buffer_index];
         let slice = buffer
-            .wait_until_mapped(self, .., wgpu::MapMode::Write)
+            .wait_until_mapped(&self.device, .., wgpu::MapMode::Write)
             .at(span, "mapping buffer for initialization")?;
-        let mut view = slice.get_mapped_range_mut();
-        value.fill(&mut view, 0).map_err(|inner| Error {
-            span: span.clone(),
-            kind: ErrorKind::Init {
-                inner: Box::new(inner),
-                buffer: buffer.id.kind.to_string(),
-            },
-        })
+        let result = {
+            let mut view = slice.get_mapped_range_mut();
+            value.fill(&mut view, 0)
+        };
+        if let Err(inner) = result {
+            return Err(Error {
+                span: span.clone(),
+                kind: ErrorKind::Init {
+                    inner: Box::new(inner),
+                    buffer: buffer.id.kind.to_string(),
+                },
+            });
+        }
+
+        buffer.unmap();
+
+        Ok(())
     }
 
     fn run_dispatch(
@@ -130,19 +152,6 @@ impl Context {
     fn run_check(&mut self, _buffer: &ast::BufferId, _value: &ast::Expression) -> Result<()> {
         todo!()
     }
-}
-
-/// A buffer we've created in a wscript program.
-#[derive(Debug)]
-pub struct Buffer {
-    /// The underlying `wgpu` buffer.
-    wgpu: wgpu::Buffer,
-
-    /// True if currently mapped.
-    mapped: bool,
-
-    /// The way the buffer was named when it was first initialized.
-    id: ast::BufferId,
 }
 
 impl Buffer {
@@ -160,8 +169,8 @@ impl Buffer {
     }
 
     pub fn wait_until_mapped<S>(
-        &self,
-        ctx: &Context,
+        &mut self,
+        device: &wgpu::Device,
         range: S,
         mode: wgpu::MapMode,
     ) -> anyhow::Result<wgpu::BufferSlice>
@@ -169,21 +178,30 @@ impl Buffer {
         S: std::ops::RangeBounds<wgpu::BufferAddress>,
     {
         let slice = self.wgpu.slice(range);
-        let error = std::sync::Arc::new(std::sync::Mutex::new(None));
-        slice.map_async(mode, {
-            let error = error.clone();
-            move |result| {
-                if let Err(e) = result {
-                    *error.lock().unwrap() = Some(e);
-                }
-            }
-        });
-        ctx.device.poll(wgpu::Maintain::Wait);
 
-        if let Some(error) = error.lock().unwrap().take() {
-            return Err(error.into());
+        if !self.mapped {
+            let error = std::sync::Arc::new(std::sync::Mutex::new(None));
+            slice.map_async(mode, {
+                let error = error.clone();
+                move |result| {
+                    if let Err(e) = result {
+                        *error.lock().unwrap() = Some(e);
+                    }
+                }
+            });
+            device.poll(wgpu::Maintain::Wait);
+
+            if let Some(error) = error.lock().unwrap().take() {
+                return Err(error.into());
+            }
+
+            self.mapped = true;
         }
 
         Ok(slice)
+    }
+
+    pub fn unmap(&self) {
+        self.wgpu.unmap();
     }
 }

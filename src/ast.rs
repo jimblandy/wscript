@@ -124,7 +124,7 @@ pub enum ExpressionKind {
     Vec(VectorSize),
 }
 
-#[derive(Debug)]
+#[derive(Clone, Copy, Debug)]
 pub enum UnaryOp {
     Negate,
 }
