@@ -136,8 +136,6 @@ impl Context {
             });
         }
 
-        buffer.unmap();
-
         Ok(())
     }
 
@@ -165,8 +163,6 @@ impl Context {
             });
         }
 
-        buffer.unmap();
-
         Ok(())
     }
 
@@ -180,6 +176,25 @@ impl Context {
 
     fn run_check(&mut self, _buffer: &ast::BufferId, _value: &ast::Expression) -> Result<()> {
         todo!()
+    }
+}
+
+impl Drop for Context {
+    fn drop(&mut self) {
+        // Without this, we get complaints from gpu-alloc, used by the
+        // Vulkan backend to manage buffers:
+        //
+        //     Memory block wasn't deallocated
+        //     Not all blocks were deallocated
+        //
+        // because we never call `gpu_alloc::GpuAllocator::dealloc` on
+        // the `wgpu_hal::vulkan::Buffer`'s `gpu_alloc::MemoryBlock`.
+        //
+        // I'm a little surprised that dropping the `wgpu::Device`
+        // doesn't take care of this for me.
+        for buffer in &self.buffers {
+            buffer.wgpu.destroy();
+        }
     }
 }
 
