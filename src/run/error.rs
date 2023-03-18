@@ -23,6 +23,15 @@ pub enum ErrorKind {
         buffer: String,
     },
 
+    /// The error `inner` occurred while executing a `check` statement.
+    Check {
+        /// The error that occurred during expression evaluation.
+        inner: Box<crate::plan::ExprError>,
+
+        /// The id of the buffer whose contents we were trying to check.
+        buffer: String,
+    },
+
     /// An `anyhow` error.
     //
     // It's a little odd to use `anyhow::Error` this way, since its
@@ -94,6 +103,20 @@ impl error::AriadneReport for Error {
                 builder.add_label(
                     ariadne::Label::new(self.span.clone())
                         .with_message(format!("while initializing buffer {buffer}")),
+                );
+                builder.add_label(
+                    ariadne::Label::new(self.span.clone())
+                        .with_message("while executing this statement"),
+                );
+            }
+            ErrorKind::Check {
+                ref inner,
+                ref buffer,
+            } => {
+                inner.write_with_config(&mut stream, cache, config)?;
+                builder.add_label(
+                    ariadne::Label::new(self.span.clone())
+                        .with_message(format!("while checking contents of buffer {buffer}")),
                 );
                 builder.add_label(
                     ariadne::Label::new(self.span.clone())

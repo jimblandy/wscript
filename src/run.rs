@@ -141,6 +141,35 @@ impl Context {
         Ok(())
     }
 
+    pub fn run_check_buffer(
+        &mut self,
+        buffer_index: usize,
+        mut value: Box<dyn plan::ByteSource>,
+        span: &ast::Span,
+    ) -> Result<()> {
+        let buffer = &mut self.buffers[buffer_index];
+        let slice = buffer
+            .wait_until_mapped(&self.device, .., wgpu::MapMode::Read)
+            .at(span, "mapping buffer for checking")?;
+        let result = {
+            let mut view = slice.get_mapped_range_mut();
+            value.fill(&mut view, 0)
+        };
+        if let Err(inner) = result {
+            return Err(Error {
+                span: span.clone(),
+                kind: ErrorKind::Init {
+                    inner: Box::new(inner),
+                    buffer: buffer.id.kind.to_string(),
+                },
+            });
+        }
+
+        buffer.unmap();
+
+        Ok(())
+    }
+
     fn run_dispatch(
         &mut self,
         _entry_point: &ast::EntryPoint,

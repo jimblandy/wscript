@@ -138,7 +138,7 @@ impl Planner {
             ast::StatementKind::Check {
                 ref buffer,
                 ref value,
-            } => todo!(),
+            } => self.plan_check(statement, buffer.clone(), value),
         }
     }
 
@@ -164,7 +164,11 @@ impl Planner {
 
         let span = statement.span.clone();
         Ok(match self.buffers.entry(handle) {
-            Entry::Occupied(occupied) => {
+            Entry::Occupied(mut occupied) => {
+                // Note that we're going to need to be able to map
+                // this buffer for writing.
+                occupied.get_mut().usage |= wgpu::BufferUsages::MAP_WRITE;
+
                 // We've already created this buffer, we're just overwriting its
                 // contents.
                 let buffer_index = occupied.index();
@@ -206,6 +210,49 @@ impl Planner {
 
                     ctx.run_init_buffer(buffer_index, bytes, &span)
                 })
+            }
+        })
+    }
+
+    fn plan_check(
+        &mut self,
+        statement: &ast::Statement,
+        buffer_id: ast::BufferId,
+        value: &ast::Expression,
+    ) -> Result<Box<Plan>> {
+        let module = self.require_module(statement)?.clone();
+        let handle = module.find_buffer_global(&buffer_id)?;
+        let global = &module.naga.global_variables[handle];
+        let bytes_plan = expr::plan_expression_bytes(self, value, &module, global.ty)
+            .map_err(|inner| todo!())?;
+
+        let span = statement.span.clone();
+        Ok(match self.buffers.entry(handle) {
+            Entry::Occupied(mut occupied) => {
+                // Note that we're going to need to be able to map
+                // this buffer for reading.
+                occupied.get_mut().usage |= wgpu::BufferUsages::MAP_READ;
+
+                let buffer_index = occupied.index();
+                Box::new(move |ctx: &mut run::Context| {
+                    let bytes = bytes_plan(ctx).map_err(|inner| run::Error {
+                        span: span.clone(),
+                        kind: run::ErrorKind::Check {
+                            inner: Box::new(inner),
+                            buffer: buffer_id.kind.to_string(),
+                        },
+                    })?;
+                    ctx.run_check_buffer(buffer_index, bytes, &span)
+                })
+            }
+            Entry::Vacant(_) => {
+                return Err(Error {
+                    span,
+                    kind: ErrorKind::NoSuchBuffer {
+                        module: module.definition.clone(),
+                        buffer_id,
+                    },
+                });
             }
         })
     }
