@@ -1,28 +1,25 @@
-#![doc = include_str!("../README.md")]
-#![allow(dead_code)]
+/*! Try running wscripts.
+
+If `$top` is the directory containing `wscript`'s `Cargo.toml` file,
+then `$top/run` is a directory containing wscript files that should
+run and exit successfully.
+
+*/
 
 use wscript::error::AriadneReport as _;
 use wscript::{error, parse, plan, run};
 
-use anyhow::{Context, Result};
-use argh::FromArgs;
+use anyhow::Context;
+use datatest_stable::{harness, Result};
 
 use std::{fs, path};
 
-#[derive(FromArgs)]
-/// Execute a `wgpu` script.
-struct WScriptArgs {
-    #[argh(positional)]
-    filename: path::PathBuf,
-}
-
-fn main() -> Result<()> {
-    let args: WScriptArgs = argh::from_env();
+/// Run a given wscript, and check that it exited without error.
+fn run(path: &path::Path) -> Result<()> {
     let mut cache = error::Cache::default();
-
-    let script = fs::read_to_string(&args.filename)
-        .with_context(|| format!("error reading script from {}", args.filename.display()))?;
-    let source_id = cache.insert(args.filename, &script);
+    let script = fs::read_to_string(path)
+        .with_context(|| format!("error reading script from {}", path.display()))?;
+    let source_id = cache.insert(path.to_owned(), &script);
 
     let program = match parse::parse(&script, source_id) {
         Ok(program) => program,
@@ -48,3 +45,5 @@ fn main() -> Result<()> {
 
     Ok(())
 }
+
+harness!(run, "run", r".*\.ws$");

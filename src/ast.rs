@@ -1,6 +1,8 @@
 //! Abstract syntax tree for wgpu-script.
 #![allow(dead_code)]
 
+use std::fmt;
+
 /// A span of wscript source code, as a byte range.
 pub type Span = (usize, std::ops::Range<usize>);
 
@@ -19,12 +21,20 @@ pub struct Statement {
 #[derive(Debug)]
 pub enum StatementKind {
     /// Set a module.
+    ///
+    /// ```ignore
+    /// "module" Code
+    /// ```
     Module {
         /// WGSL source code for the compute shader.
         wgsl: Wgsl,
     },
 
     /// Initialize a buffer.
+    ///
+    /// ```ignore
+    /// "init" Ident "=" Expression
+    /// ```
     Init {
         /// The buffer to initialize.
         buffer: BufferId,
@@ -34,6 +44,10 @@ pub enum StatementKind {
     },
 
     /// Run a compute shader.
+    ///
+    /// ```ignore
+    /// "dispatch" Ident WorkgroupCount
+    /// ```
     Dispatch {
         /// Name of the entry point to invoke.
         entry_point: EntryPoint,
@@ -43,6 +57,10 @@ pub enum StatementKind {
     },
 
     /// Check the contents of a buffer against expected values.
+    ///
+    /// ```ignore
+    /// "check" Ident "=" Expression
+    /// ```
     Check {
         /// The buffer whose contents we should check.
         buffer: BufferId,
@@ -52,20 +70,20 @@ pub enum StatementKind {
     },
 }
 
-/// A way to identify a particular buffer
-#[derive(Debug)]
-pub enum BufferId {
-    /// The name of the variable bound to this buffer in the shader.
-    Name { id: String, span: Span },
-
-    /// Binding group and index.
-    Binding(Binding),
+/// A way to identify a particular buffer.
+#[derive(Clone, Debug)]
+pub struct BufferId {
+    pub kind: BufferIdKind,
+    pub span: Span,
 }
 
-#[derive(Debug)]
-pub struct Binding {
-    pub group: (u32, Span),
-    pub binding: (u32, Span),
+#[derive(Clone, Debug)]
+pub enum BufferIdKind {
+    /// The name of the variable bound to this buffer in the shader.
+    Name(String),
+
+    /// Binding group and index.
+    Binding(naga::ResourceBinding),
 }
 
 #[derive(Debug)]
@@ -114,7 +132,7 @@ pub enum ExpressionKind {
     Vec(VectorSize),
 }
 
-#[derive(Debug)]
+#[derive(Clone, Copy, Debug)]
 pub enum UnaryOp {
     Negate,
 }
@@ -129,7 +147,7 @@ pub enum BinaryOp {
     Remainder,
 }
 
-#[derive(Debug)]
+#[derive(Clone, Copy, Debug)]
 pub enum Nullary {
     XHat,
     YHat,
@@ -205,6 +223,19 @@ impl Type {
                 ..
             } => Some(kind),
             _ => None,
+        }
+    }
+}
+
+impl fmt::Display for BufferIdKind {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match *self {
+            BufferIdKind::Name(ref id) => {
+                write!(f, "{:?}", id)
+            }
+            BufferIdKind::Binding(ref naga) => {
+                write!(f, "@group({}) @binding({})", naga.group, naga.binding)
+            }
         }
     }
 }

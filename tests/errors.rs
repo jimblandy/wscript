@@ -9,6 +9,8 @@ it matches the expectation.
 
 */
 
+use wscript::error::AriadneReport as _;
+
 use anyhow::Context;
 use datatest_stable::{harness, Result};
 
@@ -48,8 +50,7 @@ fn ariadne(path: &path::Path) -> Result<()> {
 
             let mut buffer = Vec::new();
             parse_error
-                .report_with_config(config)
-                .write(cache, &mut buffer)
+                .write_with_config(&mut buffer, &mut cache, config)
                 .unwrap();
             let report = String::from_utf8(buffer).unwrap();
 
