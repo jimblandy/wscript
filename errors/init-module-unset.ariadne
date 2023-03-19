@@ -1,0 +1,9 @@
+Error: No current module established
+   ╭─[init-module-unset.ws:1:1]
+   │
+ 1 │ init buf = 10
+   · ──────┬──────  
+   ·       ╰──────── this statement requires a current module
+   · 
+   · Help: An `init` statement statement must be preceded by a `module` statement.
+───╯

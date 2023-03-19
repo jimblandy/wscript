@@ -40,26 +40,49 @@ fn ariadne(path: &path::Path) -> Result<()> {
     let file_name: path::PathBuf = path.file_name().unwrap().to_owned().into();
     let source_id = cache.insert(file_name, &script);
 
-    match wscript::parse::parse(&script, source_id) {
-        Ok(_) => panic!(
+    // Parse and plan the script.
+    let error_message = loop {
+        let program = match wscript::parse::parse(&script, source_id) {
+            Ok(program) => program,
+            Err(parse_error) => {
+                let config = ariadne::Config::default().with_color(false);
+
+                let mut buffer = Vec::new();
+                parse_error
+                    .write_with_config(&mut buffer, &mut cache, config)
+                    .unwrap();
+                break Some(String::from_utf8(buffer).unwrap());
+            }
+        };
+
+        let (_plan, _summary) = match wscript::plan::plan(&program) {
+            Ok(success) => success,
+            Err(plan_error) => {
+                let config = ariadne::Config::default().with_color(false);
+
+                let mut buffer = Vec::new();
+                plan_error
+                    .write_with_config(&mut buffer, &mut cache, config)
+                    .unwrap();
+                break Some(String::from_utf8(buffer).unwrap());
+            }
+        };
+
+        break None;
+    };
+
+    match error_message {
+        None => panic!(
             "Unexpected pass: parsing `{}` did not produce an error",
             path.display()
         ),
-        Err(parse_error) => {
-            let config = ariadne::Config::default().with_color(false);
-
-            let mut buffer = Vec::new();
-            parse_error
-                .write_with_config(&mut buffer, &mut cache, config)
-                .unwrap();
-            let report = String::from_utf8(buffer).unwrap();
-
-            if report != expected_ariadne {
+        Some(error_message) => {
+            if error_message != expected_ariadne {
                 println!(
                     "error message for `{}` doesn't match expectation",
                     path.display()
                 );
-                let diff = similar::TextDiff::from_lines(&expected_ariadne, &report);
+                let diff = similar::TextDiff::from_lines(&expected_ariadne, &error_message);
                 for change in diff.iter_all_changes() {
                     let sign = match change.tag() {
                         similar::ChangeTag::Equal => ' ',
