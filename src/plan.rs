@@ -141,7 +141,7 @@ impl Planner {
     }
 
     fn plan_module(&mut self, statement: &ast::Statement, wgsl: &ast::Wgsl) -> Result<Box<Plan>> {
-        let module = Module::new(&wgsl.text, statement.span.clone())
+        let module = Module::new(&wgsl, statement.span.clone())
             .at(&statement.span, "in this `module` statement")?;
         let module = Arc::new(module);
         self.module = Some(module.clone());

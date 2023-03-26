@@ -95,7 +95,7 @@ pub struct EntryPoint {
 #[derive(Debug)]
 pub struct Wgsl {
     /// WGSL source text, with all common indentation removed.
-    pub text: String,
+    pub code: CodeBlock,
 
     /// Position of this WGSL source code in the script.
     pub span: Span,
@@ -208,6 +208,20 @@ pub enum VectorSize {
     Vec2 = 2,
     Vec3 = 3,
     Vec4 = 4,
+}
+
+/// The contents of a `"""` code block.
+#[derive(Debug, PartialEq)]
+pub struct CodeBlock {
+    /// The code represented. Common indentation and leading and trailing blank lines are removed.
+    pub text: String,
+
+    /// A mapping from positions in `text` to the corresponding byte ranges in
+    /// the input, so that we can find script spans corresponding to Naga spans.
+    ///
+    /// Since we trim trailing whitespace and normalize line endings, the newlines
+    /// in `text` are excluded from these ranges.
+    pub map: Vec<(usize, std::ops::Range<usize>)>,
 }
 
 pub fn join_spans(left: &Span, right: &Span) -> Span {

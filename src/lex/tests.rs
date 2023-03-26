@@ -166,6 +166,13 @@ fn indentation() {
     );
 }
 
+fn code(text: &str, map: impl IntoIterator<Item = (usize, std::ops::Range<usize>)>) -> TokenKind {
+    TokenKind::CodeBlock(CodeBlock {
+        text: text.to_string(),
+        map: map.into_iter().collect(),
+    })
+}
+
 #[test]
 fn code_block() {
     fn check(block: &str) -> TokenResult {
@@ -208,7 +215,7 @@ termination
         ),
         Ok(Token {
             span: (1, 8..20),
-            kind: TokenKind::Code("code\n".to_string()),
+            kind: code("code\n", [(0, 15..19)]),
         })
     );
 
@@ -222,7 +229,7 @@ termination
         ),
         Ok(Token {
             span: (1, 12..26),
-            kind: TokenKind::Code("code\n".to_string()),
+            kind: code("code\n", [(0, 21..25)]),
         })
     );
 
@@ -230,7 +237,7 @@ termination
         check(r#"   shader """"#),
         Ok(Token {
             span: (1, 10..13),
-            kind: TokenKind::Code("".to_string()),
+            kind: code("", []),
         })
     );
 
@@ -241,7 +248,7 @@ termination
         ),
         Ok(Token {
             span: (1, 10..14),
-            kind: TokenKind::Code("".to_string()),
+            kind: code("", []),
         })
     );
 
@@ -253,7 +260,7 @@ termination
         ),
         Ok(Token {
             span: (1, 0..5),
-            kind: TokenKind::Code("".to_string()),
+            kind: code("", []),
         })
     );
 
@@ -270,7 +277,10 @@ termination
         ),
         Ok(Token {
             span: (1, 11..57),
-            kind: TokenKind::Code("  code\nstuff\n\n various\n".to_string()),
+            kind: code(
+                "  code\nstuff\n\n various\n",
+                [(0, 22..28), (7, 35..40), (14, 48..56)]
+            ),
         })
     );
 
@@ -290,7 +300,10 @@ termination
         ),
         Ok(Token {
             span: (1, 11..59),
-            kind: TokenKind::Code("  code\nstuff\n\n various\n".to_string()),
+            kind: code(
+                "  code\nstuff\n\n various\n",
+                [(0, 22..28), (7, 35..40), (14, 48..56)]
+            )
         })
     );
 }

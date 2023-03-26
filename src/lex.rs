@@ -2,7 +2,7 @@
 
 use unicode_xid::UnicodeXID;
 
-use super::ast::{Span, VectorSize};
+use super::ast::{CodeBlock, Span, VectorSize};
 
 use std::str::FromStr;
 
@@ -26,7 +26,7 @@ pub enum TokenKind<'s> {
     Range,
 
     /// Triple-quoted, indented source code.
-    Code(String),
+    CodeBlock(CodeBlock),
 
     Module,
     Init,
@@ -172,7 +172,13 @@ impl<'s> Input<'s> {
 
     /// Return the offset of the start of `rest` within `self.text`.
     ///
-    /// `rest` must be a complete tail of `self.text`.
+    /// `rest` must be a complete tail of `self.text`. This restriction lets us
+    /// use the slices' lengths, rather than their pointers, to compute the
+    /// offset. Subtracting pointers would work, but that's undefined behavior
+    /// unless the pointers being subtracted both refer to parts of the same
+    /// object. Since we can't ensure statically that `rest` is a subslice of
+    /// `self.text`, this would have to become an `unsafe` function if we tried
+    /// to use pointer subtraction, and that'd be a pain.
     #[inline]
     fn offset(&self, rest: &str) -> usize {
         self.text.len() - rest.len()
@@ -369,6 +375,9 @@ impl<'s> Input<'s> {
         while !body.is_empty() {
             let indentation = self.indentation(body, CodeBlockPart::Body)?;
 
+            // This line's starting position in the input, including all indentation.
+            let pos = self.offset(body);
+
             // Find the extent of the next line.
             let (line, next) = body.split_once('\n').unwrap_or((body, ""));
             let line = line.strip_suffix('\r').unwrap_or(line);
@@ -387,7 +396,7 @@ impl<'s> Input<'s> {
                 common_indentation = std::cmp::min(common_indentation, indentation);
             }
 
-            lines.push(line);
+            lines.push((line, pos));
             body = next;
         }
 
@@ -397,32 +406,43 @@ impl<'s> Input<'s> {
         {
             let leading_blanks = lines
                 .iter()
-                .position(|line| !line.is_empty())
+                .position(|&(line, _pos)| !line.is_empty())
                 .unwrap_or(lines.len());
             lines.drain(..leading_blanks);
 
             let until_trailing_blanks = lines
                 .iter()
-                .rposition(|line| !line.is_empty())
+                .rposition(|&(line, _pos)| !line.is_empty())
                 .map(|n| n + 1)
                 .unwrap_or(0);
             lines.truncate(until_trailing_blanks);
         }
 
         // Now that we know the common indentation, we can build the text.
-        let mut code = String::new();
-        for line in lines {
+        let mut text = String::new();
+        let mut map = vec![];
+        for (line, line_pos) in lines {
             if line.len() > common_indentation {
+                // Note the position in text at which we're about to add new text.
+                let text_pos = text.len();
+
                 // We know this is a character boundary, because we required
                 // all indentation to be ASCII spaces only.
-                code.push_str(&line[common_indentation..]);
+                text.push_str(&line[common_indentation..]);
+
+                // Record which section of the input this part of `text`
+                // corresponds to.
+                map.push((
+                    text_pos,
+                    line_pos + common_indentation..line_pos + line.len(),
+                ));
             }
-            code.push('\n');
+            text.push('\n');
         }
 
         Ok(Token {
             span,
-            kind: TokenKind::Code(code),
+            kind: TokenKind::CodeBlock(CodeBlock { text, map }),
         })
     }
 
@@ -460,7 +480,7 @@ impl<'s> TokenKind<'s> {
             TokenKind::Number(_) => "a number",
             TokenKind::Ident(ident) => return ident.to_string(),
             TokenKind::Range => "a range",
-            TokenKind::Code(_) => "a code block",
+            TokenKind::CodeBlock(_) => "a code block",
             TokenKind::Module => "module",
             TokenKind::Init => "init",
             TokenKind::Dispatch => "dispatch",

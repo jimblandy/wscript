@@ -12,8 +12,8 @@ pub struct Module {
 }
 
 impl Module {
-    pub fn new(source: &str, definition: Span) -> anyhow::Result<Module> {
-        let naga = naga::front::wgsl::parse_str(source)?;
+    pub fn new(source: &ast::Wgsl, definition: Span) -> anyhow::Result<Module> {
+        let naga = naga::front::wgsl::parse_str(&source.code.text)?;
 
         let mut validator = naga::valid::Validator::new(
             naga::valid::ValidationFlags::default(),

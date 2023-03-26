@@ -35,7 +35,7 @@ impl<'a> Context<'a> {
     pub fn parse_module(&mut self, keyword: Span) -> Result<ast::Statement, ParseError> {
         let (text, span) = match self.next()? {
             Token {
-                kind: TokenKind::Code(code),
+                kind: TokenKind::CodeBlock(code),
                 span,
             } => (code, span),
             Token { span, .. } => {
@@ -49,7 +49,7 @@ impl<'a> Context<'a> {
         Ok(ast::Statement {
             span: join_spans(&keyword, &span),
             kind: ast::StatementKind::Module {
-                wgsl: ast::Wgsl { text, span },
+                wgsl: ast::Wgsl { code: text, span },
             },
         })
     }
