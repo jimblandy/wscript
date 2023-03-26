@@ -5,7 +5,8 @@ use super::{LeBytes, Module};
 use crate::{ast, error, run};
 use ast::Span;
 
-struct ExprPlanner<'p> {
+struct ExprPlanner<'a, 'p> {
+    expr: &'a ast::Expression,
     module: &'p Module,
     expected_type: naga::Handle<naga::Type>,
 }
@@ -76,20 +77,21 @@ pub enum ErrorKind {
     },
 }
 
-pub(super) fn plan_expression_bytes(
-    expr: &ast::Expression,
-    module: &Module,
+pub(super) fn plan_expression_bytes<'a, 'p>(
+    expr: &'a ast::Expression,
+    module: &'p Module,
     expected_type: naga::Handle<naga::Type>,
 ) -> super::Result<Box<BytesPlan>> {
-    ExprPlanner {
+    ExprPlanner::<'a, 'p> {
+        expr,
         module,
         expected_type,
     }
-    .plan_bytes(expr)
+    .plan_bytes()
 }
 
-impl<'p> ExprPlanner<'p> {
-    pub fn plan_bytes(&mut self, expr: &ast::Expression) -> super::Result<Box<BytesPlan>> {
+impl<'a, 'p> ExprPlanner<'a, 'p> {
+    pub fn plan_bytes(&mut self) -> super::Result<Box<BytesPlan>> {
         use naga::ScalarKind as Sk;
         use naga::TypeInner as Ti;
 
@@ -99,19 +101,19 @@ impl<'p> ExprPlanner<'p> {
             Ti::Scalar {
                 kind: Sk::Float,
                 width: 4,
-            } => return self.plan_scalar_bytes::<f32>(expr),
+            } => return self.plan_scalar_bytes::<f32>(),
             Ti::Scalar {
                 kind: Sk::Sint,
                 width: 4,
-            } => return self.plan_scalar_bytes::<i32>(expr),
+            } => return self.plan_scalar_bytes::<i32>(),
             Ti::Scalar {
                 kind: Sk::Uint,
                 width: 4,
-            } => return self.plan_scalar_bytes::<u32>(expr),
+            } => return self.plan_scalar_bytes::<u32>(),
             _ => (),
         }
 
-        match expr.kind {
+        match self.expr.kind {
             ast::ExpressionKind::Literal(_) => todo!(),
             ast::ExpressionKind::Sequence(_) => todo!(),
             ast::ExpressionKind::Unary { op: _, operand: _ } => todo!(),
@@ -126,12 +128,12 @@ impl<'p> ExprPlanner<'p> {
         }
     }
 
-    fn plan_scalar_bytes<T>(&mut self, expr: &ast::Expression) -> super::Result<Box<BytesPlan>>
+    fn plan_scalar_bytes<T>(&mut self) -> super::Result<Box<BytesPlan>>
     where
         T: LeBytes + Scalar + 'static,
     {
-        let value_plan: Box<ValuePlan<T>> = self.plan_scalar_value(expr)?;
-        let span = expr.span.clone();
+        let value_plan: Box<ValuePlan<T>> = self.plan_scalar_value()?;
+        let span = self.expr.span.clone();
         Ok(Box::new(move |ctx: &mut run::Context| {
             let value = value_plan(ctx)?;
             Ok(Box::new(Bytes {
@@ -142,11 +144,27 @@ impl<'p> ExprPlanner<'p> {
         }))
     }
 
-    fn plan_scalar_value<T>(&mut self, expr: &ast::Expression) -> super::Result<Box<ValuePlan<T>>>
+    fn plan_subexpression_value<T>(
+        &mut self,
+        subexpression: &'a ast::Expression,
+        expected_type: naga::Handle<naga::Type>,
+    ) -> super::Result<Box<ValuePlan<T>>>
     where
         T: Scalar + 'static,
     {
-        match expr.kind {
+        ExprPlanner {
+            expr: subexpression,
+            expected_type,
+            module: &*self.module,
+        }
+        .plan_scalar_value()
+    }
+
+    fn plan_scalar_value<T>(&mut self) -> super::Result<Box<ValuePlan<T>>>
+    where
+        T: Scalar + 'static,
+    {
+        match self.expr.kind {
             ast::ExpressionKind::Literal(n) => Ok(plan_value::<T>(T::from_literal(n))),
             ast::ExpressionKind::Sequence(_) => todo!(),
             ast::ExpressionKind::Unary { op: _, operand: _ } => todo!(),
@@ -166,10 +184,10 @@ impl<'p> ExprPlanner<'p> {
 
     fn plan_binary_scalar_value<T>(
         &mut self,
-        left: &ast::Expression,
+        left: &'a ast::Expression,
         op: ast::BinaryOp,
         _op_span: &Span,
-        right: &ast::Expression,
+        right: &'a ast::Expression,
     ) -> super::Result<Box<ValuePlan<T>>>
     where
         T: Scalar + 'static,
@@ -177,8 +195,8 @@ impl<'p> ExprPlanner<'p> {
         match op {
             ast::BinaryOp::Range => todo!(),
             ast::BinaryOp::Add => {
-                let left_plan = self.plan_scalar_value(left)?;
-                let right_plan = self.plan_scalar_value(right)?;
+                let left_plan = self.plan_subexpression_value(left, self.expected_type)?;
+                let right_plan = self.plan_subexpression_value(right, self.expected_type)?;
                 Ok(Box::new(move |ctx: &mut run::Context| {
                     let left = left_plan(ctx)?;
                     let right = right_plan(ctx)?;
