@@ -266,6 +266,20 @@ termination
 
     assert_eq!(
         check(
+            r#"
+   """
+   terminator
+
+"#
+        ),
+        Ok(Token {
+            span: (1, 4..8),
+            kind: code("", []),
+        })
+    );
+
+    assert_eq!(
+        check(
             "
     bleah \"\"\"\r
         code
