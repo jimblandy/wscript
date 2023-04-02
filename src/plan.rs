@@ -158,7 +158,7 @@ impl Planner {
         let handle = module.find_buffer_global(&buffer_id)?;
         let global = &module.naga.global_variables[handle];
         let bytes_plan =
-            expr::plan_expression_bytes(value, &module, global.ty).map_err(|inner| todo!())?;
+            expr::plan_expression_bytes(value, &module, global.ty)?;
 
         let span = statement.span.clone();
         Ok(match self.global_buffers.entry(handle) {
@@ -173,7 +173,7 @@ impl Planner {
                 Box::new(move |ctx: &mut run::Context| {
                     let bytes = bytes_plan(ctx).map_err(|inner| run::Error {
                         span: span.clone(),
-                        kind: run::ErrorKind::Init {
+                        kind: run::ErrorKind::InitExpression {
                             inner: Box::new(inner),
                             buffer: buffer_id.kind.to_string(),
                         },
@@ -197,7 +197,7 @@ impl Planner {
                     let bytes: Box<dyn expr::ByteSource + 'static> =
                         bytes_plan(ctx).map_err(|inner| run::Error {
                             span: span.clone(),
-                            kind: run::ErrorKind::Init {
+                            kind: run::ErrorKind::InitExpression {
                                 inner: Box::new(inner),
                                 buffer: buffer_id.kind.to_string(),
                             },
@@ -220,7 +220,7 @@ impl Planner {
         let handle = module.find_buffer_global(&buffer_id)?;
         let global = &module.naga.global_variables[handle];
         let bytes_plan =
-            expr::plan_expression_bytes(value, &module, global.ty).map_err(|inner| todo!())?;
+            expr::plan_expression_bytes(value, &module, global.ty)?;
 
         let span = statement.span.clone();
         let mut occupied = match self.global_buffers.entry(handle) {

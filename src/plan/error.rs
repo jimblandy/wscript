@@ -2,6 +2,7 @@
 
 use crate::ast::{self, Span};
 use crate::error;
+use super::expr;
 
 use std::io;
 
@@ -22,6 +23,7 @@ pub enum ErrorKind {
         module: Span,
         buffer_id: ast::BufferId,
     },
+    Expr(expr::ErrorKind),
 
     /// An `anyhow` error.
     //
@@ -118,6 +120,7 @@ impl error::AriadneReport for Error {
                 b.set_help("Buffer identifiers must refer to globals in the current shader module by name \
                             or by binding group and index.");
             }
+            ErrorKind::Expr(ref expr) => expr.build_report(b),
             ErrorKind::Anyhow {
                 ref error,
                 ref context,
@@ -161,6 +164,15 @@ impl<T> IntoPlanResult<T> for anyhow::Result<T> {
                 kind: ErrorKind::Anyhow { error, context },
                 span: span.clone(),
             }),
+        }
+    }
+}
+
+impl From<expr::Error> for Error {
+    fn from(expr: expr::Error) -> Self {
+        Self {
+            kind: ErrorKind::Expr(expr.kind),
+            span: expr.span,
         }
     }
 }

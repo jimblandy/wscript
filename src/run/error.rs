@@ -4,6 +4,7 @@ use crate::ast::Span;
 use crate::error;
 use std::io;
 
+/// An error that occurs at runtime.
 #[derive(Debug)]
 pub struct Error {
     pub kind: ErrorKind,
@@ -14,10 +15,10 @@ pub type Result<T> = std::result::Result<T, Error>;
 
 #[derive(Debug)]
 pub enum ErrorKind {
-    /// The error `inner` occurred while executing an `init` statement.
-    Init {
+    /// The error `inner` occurred while evaluating an `init` statement's expression.
+    InitExpression {
         /// The error that occurred during expression evaluation.
-        inner: Box<crate::plan::ExprError>,
+        inner: Box<ExprError>,
 
         /// The id of the buffer we were trying to initialize.
         buffer: String,
@@ -26,7 +27,7 @@ pub enum ErrorKind {
     /// The error `inner` occurred while executing a `check` statement.
     Check {
         /// The error that occurred during expression evaluation.
-        inner: Box<crate::plan::ExprError>,
+        inner: Box<ExprError>,
 
         /// The id of the buffer whose contents we were trying to check.
         buffer: String,
@@ -60,6 +61,38 @@ pub enum ErrorKind {
     Anyhow {
         error: anyhow::Error,
         context: &'static str,
+    },
+}
+
+pub type ExprResult<T> = std::result::Result<T, ExprError>;
+
+/// An error that occurs while evaluating an expression at runtime.
+#[derive(Debug)]
+pub struct ExprError {
+    pub span: Span,
+    pub kind: ExprErrorKind,
+}
+
+#[derive(Debug)]
+pub enum ExprErrorKind {
+    /// The buffer named `label` was not large enough to hold `value`.
+    ///
+    /// The error's [`span`] indicates the expression that produced
+    /// the value that doesn't fit.
+    ///
+    /// [`span`]: Error::span
+    BufferTooShort {
+        /// The kind of value we're trying to store in the buffer.
+        type_name: &'static str,
+
+        /// The number of bytes needed to store the value.
+        needed: usize,
+
+        /// The number of bytes actually available.
+        available: usize,
+
+        /// The offset at which we were trying to store the value.
+        offset: usize,
     },
 }
 
@@ -104,7 +137,8 @@ impl error::AriadneReport for Error {
             } => {
                 builder.set_message(format!("Error in {context}: {error}"));
             }
-            ErrorKind::Init {
+
+            ErrorKind::InitExpression {
                 ref inner,
                 ref buffer,
             } => {
@@ -118,6 +152,7 @@ impl error::AriadneReport for Error {
                         .with_message("while executing this statement"),
                 );
             }
+
             ErrorKind::Check {
                 ref inner,
                 ref buffer,
@@ -132,6 +167,7 @@ impl error::AriadneReport for Error {
                         .with_message("while executing this statement"),
                 );
             }
+
             ErrorKind::CheckFailed { ref buffer, offset } => {
                 builder.set_message(format!(
                     "buffer {buffer} does not have the expected contents at byte {offset}"
@@ -140,6 +176,44 @@ impl error::AriadneReport for Error {
                     ariadne::Label::new(self.span.clone())
                         .with_message("while executing this statement"),
                 );
+            }
+        }
+
+        let report = builder.finish();
+        report.write(cache, stream)
+    }
+}
+
+impl error::AriadneReport for ExprError {
+    fn write_with_config<W>(
+        &self,
+        stream: W,
+        cache: &mut error::Cache,
+        config: ariadne::Config,
+    ) -> io::Result<()>
+    where
+        W: io::Write,
+    {
+        use ariadne::{Report, ReportKind};
+
+        let (source_id, range) = self.span.clone();
+        let mut builder =
+            Report::<Span>::build(ReportKind::Error, source_id, range.start).with_config(config);
+
+        match self.kind {
+            ExprErrorKind::BufferTooShort {
+                type_name,
+                needed,
+                available,
+                offset,
+            } => {
+                builder.set_message(format!(
+                    "not enough room in buffer to hold {type_name} value"
+                ));
+                builder.add_label(
+                    ariadne::Label::new(self.span.clone()).with_message("this value doesn't fit"),
+                );
+                builder.set_help(format!("value needs {needed} bytes, but only {available} bytes are available at offset {offset} in the buffer"));
             }
         }
 

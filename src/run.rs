@@ -7,7 +7,7 @@ use std::fmt;
 
 mod error;
 
-pub use error::{Error, ErrorKind, IntoRunResult, Result};
+pub use error::{Error, ErrorKind, ExprError, ExprErrorKind, ExprResult, IntoRunResult, Result};
 
 /// Execution context for wscript programs.
 #[derive(Debug)]
@@ -144,7 +144,7 @@ impl Context {
         if let Err(inner) = result {
             return Err(Error {
                 span: span.clone(),
-                kind: ErrorKind::Init {
+                kind: ErrorKind::InitExpression {
                     inner: Box::new(inner),
                     buffer: buffer.id.to_string(),
                 },

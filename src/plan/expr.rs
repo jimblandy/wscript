@@ -2,7 +2,7 @@
 #![allow(unused_variables)]
 
 use super::{LeBytes, Module};
-use crate::{ast, error, run};
+use crate::{ast, error, plan, run};
 use ast::Span;
 
 struct ExprPlanner<'a, 'p> {
@@ -12,10 +12,10 @@ struct ExprPlanner<'a, 'p> {
 }
 
 /// A plan that can construct a value of type `T`.
-pub type ValuePlan<T> = dyn Fn(&mut run::Context) -> Result<T>;
+pub type ValuePlan<T> = dyn Fn(&mut run::Context) -> run::ExprResult<T>;
 
 /// A plan that can construct a [`ByteSource`].
-pub type BytesPlan = dyn Fn(&mut run::Context) -> Result<Box<dyn ByteSource + 'static>> + 'static;
+pub type BytesPlan = dyn Fn(&mut run::Context) -> run::ExprResult<Box<dyn ByteSource + 'static>> + 'static;
 
 /// A source of data to initialize a GPU buffer, or check its contents.
 pub trait ByteSource {
@@ -27,14 +27,14 @@ pub trait ByteSource {
     /// For simplicity of code, `buf` is probably a subsection of some
     /// larger buffer. For error reporting, `offset` is the offset
     /// within that larger buffer at which `buf` occurs.
-    fn fill(&mut self, buf: &mut [u8], offset: usize) -> Result<()>;
+    fn fill(&mut self, buf: &mut [u8], offset: usize) -> run::ExprResult<()>;
 
     /// Compare `buf` against the next `buf.len()` bytes from this source.
     ///
     /// For simplicity of code, `buf` is probably a subsection of some
     /// larger buffer. For error reporting, `offset` is the offset
     /// within that larger buffer at which `buf` occurs.
-    fn compare(&mut self, buf: &[u8], offset: usize) -> Result<Comparison>;
+    fn compare(&mut self, buf: &[u8], offset: usize) -> run::ExprResult<Comparison>;
 }
 
 pub enum Comparison {
@@ -48,50 +48,34 @@ pub enum Comparison {
 
 pub type Result<T> = std::result::Result<T, Error>;
 
+/// An error detecting while planning an expression.
 #[derive(Debug)]
 pub struct Error {
-    kind: ErrorKind,
-    span: Span,
+    pub kind: ErrorKind,
+    pub span: Span,
 }
 
 #[derive(Debug)]
 pub enum ErrorKind {
-    /// The buffer named `label` was not large enough to hold `value`.
-    ///
-    /// The error's [`span`] indicates the expression that produced
-    /// the value that doesn't fit.
-    ///
-    /// [`span`]: Error::span
-    BufferTooShort {
-        /// The kind of value we're trying to store in the buffer.
-        type_name: &'static str,
-
-        /// The number of bytes needed to store the value.
-        needed: usize,
-
-        /// The number of bytes actually available.
-        available: usize,
-
-        /// The offset at which we were trying to store the value.
-        offset: usize,
-    },
 }
 
 pub(super) fn plan_expression_bytes<'a, 'p>(
     expr: &'a ast::Expression,
     module: &'p Module,
     expected_type: naga::Handle<naga::Type>,
-) -> super::Result<Box<BytesPlan>> {
-    ExprPlanner::<'a, 'p> {
+) -> plan::Result<Box<BytesPlan>> {
+    let plan = ExprPlanner::<'a, 'p> {
         expr,
         module,
         expected_type,
     }
-    .plan_bytes()
+    .plan_bytes()?;
+
+    Ok(plan)
 }
 
 impl<'a, 'p> ExprPlanner<'a, 'p> {
-    pub fn plan_bytes(&mut self) -> super::Result<Box<BytesPlan>> {
+    pub fn plan_bytes(&mut self) -> Result<Box<BytesPlan>> {
         use naga::ScalarKind as Sk;
         use naga::TypeInner as Ti;
 
@@ -128,7 +112,7 @@ impl<'a, 'p> ExprPlanner<'a, 'p> {
         }
     }
 
-    fn plan_scalar_bytes<T>(&mut self) -> super::Result<Box<BytesPlan>>
+    fn plan_scalar_bytes<T>(&mut self) -> Result<Box<BytesPlan>>
     where
         T: LeBytes + Scalar + 'static,
     {
@@ -148,7 +132,7 @@ impl<'a, 'p> ExprPlanner<'a, 'p> {
         &mut self,
         subexpression: &'a ast::Expression,
         expected_type: naga::Handle<naga::Type>,
-    ) -> super::Result<Box<ValuePlan<T>>>
+    ) -> Result<Box<ValuePlan<T>>>
     where
         T: Scalar + 'static,
     {
@@ -160,7 +144,7 @@ impl<'a, 'p> ExprPlanner<'a, 'p> {
         .plan_scalar_value()
     }
 
-    fn plan_scalar_value<T>(&mut self) -> super::Result<Box<ValuePlan<T>>>
+    fn plan_scalar_value<T>(&mut self) -> Result<Box<ValuePlan<T>>>
     where
         T: Scalar + 'static,
     {
@@ -188,7 +172,7 @@ impl<'a, 'p> ExprPlanner<'a, 'p> {
         op: ast::BinaryOp,
         _op_span: &Span,
         right: &'a ast::Expression,
-    ) -> super::Result<Box<ValuePlan<T>>>
+    ) -> Result<Box<ValuePlan<T>>>
     where
         T: Scalar + 'static,
     {
@@ -216,7 +200,7 @@ impl<'a, 'p> ExprPlanner<'a, 'p> {
         op: ast::BinaryOp,
         op_span: &Span,
         right: &ast::Expression,
-    ) -> super::Result<Box<BytesPlan>> {
+    ) -> Result<Box<BytesPlan>> {
         match op {
             ast::BinaryOp::Range => {
                 let left_plan = todo!();
@@ -279,13 +263,13 @@ where
         self.bytes.as_ref().len()
     }
 
-    fn fill(&mut self, buf: &mut [u8], offset: usize) -> Result<()> {
+    fn fill(&mut self, buf: &mut [u8], offset: usize) -> run::ExprResult<()> {
         self.check(buf, offset)?;
         buf[..self.len()].copy_from_slice(self.bytes.as_ref());
         Ok(())
     }
 
-    fn compare(&mut self, buf: &[u8], offset: usize) -> Result<Comparison> {
+    fn compare(&mut self, buf: &[u8], offset: usize) -> run::ExprResult<Comparison> {
         self.check(buf, offset)?;
         for (i, (actual, expected)) in buf[..self.len()]
             .iter()
@@ -302,12 +286,12 @@ where
 }
 
 impl<B: AsRef<[u8]>> Bytes<B> {
-    fn check(&self, buf: &[u8], offset: usize) -> Result<()> {
+    fn check(&self, buf: &[u8], offset: usize) -> run::ExprResult<()> {
         let needed = std::mem::size_of::<B>();
         if buf.len() < needed {
-            return Err(Error {
+            return Err(run::ExprError {
                 span: self.span.clone(),
-                kind: ErrorKind::BufferTooShort {
+                kind: run::ExprErrorKind::BufferTooShort {
                     type_name: self.type_name,
                     needed,
                     available: buf.len(),
@@ -319,40 +303,8 @@ impl<B: AsRef<[u8]>> Bytes<B> {
     }
 }
 
-impl error::AriadneReport for Error {
-    fn write_with_config<W>(
-        &self,
-        stream: W,
-        cache: &mut error::Cache,
-        config: ariadne::Config,
-    ) -> std::io::Result<()>
-    where
-        W: std::io::Write,
-    {
-        use ariadne::{Report, ReportKind};
-
-        let (source_id, range) = self.span.clone();
-        let mut builder =
-            Report::<Span>::build(ReportKind::Error, source_id, range.start).with_config(config);
-
-        match self.kind {
-            ErrorKind::BufferTooShort {
-                type_name,
-                needed,
-                available,
-                offset,
-            } => {
-                builder.set_message(format!(
-                    "not enough room in buffer to hold {type_name} value"
-                ));
-                builder.add_label(
-                    ariadne::Label::new(self.span.clone()).with_message("this value doesn't fit"),
-                );
-                builder.set_help(format!("value needs {needed} bytes, but only {available} bytes are available at offset {offset} in the buffer"));
-            }
-        }
-
-        let report = builder.finish();
-        report.write(cache, stream)
+impl ErrorKind {
+    pub fn build_report(&self, builder: &mut error::ReportBuilder) {
+        todo!()
     }
 }
