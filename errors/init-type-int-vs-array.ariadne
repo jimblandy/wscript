@@ -1,0 +1,11 @@
+Error: Range expressions must have array types, but this is expected to be of type `S`
+   ╭─[init-type-int-vs-array.ws:6:10]
+   │
+ 2 │   struct S { n: i32 }
+   ·   ────────┬────────  
+   ·           ╰────────── the expression must produce a value of this type
+   · 
+ 6 │ init s = 1..10
+   ·          ──┬──  
+   ·            ╰──── this range expression will produce an array
+───╯

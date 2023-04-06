@@ -1,19 +1,22 @@
 //! Statically known information about shader modules.
 
+use std::sync::Arc;
+
 use super::{error, Result};
-use crate::ast::{self, Span};
+use crate::ast::{self, CodeBlock, Span};
 
 /// Static information about a WebGPU module.
 #[derive(Debug)]
 pub struct Module {
+    pub source: Arc<CodeBlock>,
     pub naga: naga::Module,
     pub info: naga::valid::ModuleInfo,
     pub definition: Span,
 }
 
 impl Module {
-    pub fn new(source: &ast::Wgsl, definition: Span) -> anyhow::Result<Module> {
-        let naga = naga::front::wgsl::parse_str(&source.code.text)?;
+    pub fn new(source: &Arc<CodeBlock>, definition: Span) -> anyhow::Result<Module> {
+        let naga = naga::front::wgsl::parse_str(&source.text)?;
 
         let mut validator = naga::valid::Validator::new(
             naga::valid::ValidationFlags::default(),
@@ -22,6 +25,7 @@ impl Module {
         let info = validator.validate(&naga)?;
 
         Ok(Module {
+            source: source.clone(),
             naga,
             info,
             definition,

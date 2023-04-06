@@ -1,7 +1,8 @@
 //! Planning expression evaluation.
-#![allow(unused_variables)]
+#![allow(unused_variables, unreachable_code)]
 
 use super::{LeBytes, Module};
+use crate::wgsl::Wgsl;
 use crate::{ast, error, plan, run};
 use ast::Span;
 
@@ -15,7 +16,8 @@ struct ExprPlanner<'a, 'p> {
 pub type ValuePlan<T> = dyn Fn(&mut run::Context) -> run::ExprResult<T>;
 
 /// A plan that can construct a [`ByteSource`].
-pub type BytesPlan = dyn Fn(&mut run::Context) -> run::ExprResult<Box<dyn ByteSource + 'static>> + 'static;
+pub type BytesPlan =
+    dyn Fn(&mut run::Context) -> run::ExprResult<Box<dyn ByteSource + 'static>> + 'static;
 
 /// A source of data to initialize a GPU buffer, or check its contents.
 pub trait ByteSource {
@@ -52,14 +54,24 @@ pub type Result<T> = std::result::Result<T, Error>;
 #[derive(Debug)]
 pub struct Error {
     pub kind: ErrorKind,
+
+    /// The expression we're complaining about.
     pub span: Span,
 }
 
 #[derive(Debug)]
 pub enum ErrorKind {
+    /// The expected type of a range expression was not an array.
+    RangeNotArray {
+        /// The expected type.
+        expected_type_span: Option<Span>,
+
+        /// The name of the expected type, as a string.
+        expected_type_name: String,
+    },
 }
 
-pub(super) fn plan_expression_bytes<'a, 'p>(
+pub(super) fn plan_expression_bytes<'p, 'a>(
     expr: &'a ast::Expression,
     module: &'p Module,
     expected_type: naga::Handle<naga::Type>,
@@ -81,7 +93,7 @@ impl<'a, 'p> ExprPlanner<'a, 'p> {
 
         // Scalar and vector values we can just evaluate as values and
         // then convert to bytes.
-        match self.module.naga.types[self.expected_type].inner {
+        match *self.expected_type_inner() {
             Ti::Scalar {
                 kind: Sk::Float,
                 width: 4,
@@ -196,21 +208,60 @@ impl<'a, 'p> ExprPlanner<'a, 'p> {
 
     fn plan_binary_bytes(
         &mut self,
-        left: &ast::Expression,
+        left: &'a ast::Expression,
         op: ast::BinaryOp,
         op_span: &Span,
-        right: &ast::Expression,
+        right: &'a ast::Expression,
     ) -> Result<Box<BytesPlan>> {
         match op {
-            ast::BinaryOp::Range => {
-                let left_plan = todo!();
-            }
+            ast::BinaryOp::Range => self.plan_range_bytes(left, op_span, right),
             ast::BinaryOp::Add => todo!(),
             ast::BinaryOp::Subtract => todo!(),
             ast::BinaryOp::Multiply => todo!(),
             ast::BinaryOp::Divide => todo!(),
             ast::BinaryOp::Remainder => todo!(),
         }
+    }
+
+    fn plan_range_bytes(
+        &mut self,
+        left: &'a ast::Expression,
+        op_span: &Span,
+        right: &'a ast::Expression,
+    ) -> Result<Box<BytesPlan>> {
+        use naga::TypeInner as Ti;
+
+        let Ti::Array { base, size, stride } = *self.expected_type_inner() else {
+            return Err(Error {
+                span: self.expr.span.clone(),
+                kind: ErrorKind::RangeNotArray {
+                    expected_type_span: self.expected_type_span(),
+                    expected_type_name: Wgsl((self.expected_type, &self.module.naga)).to_string(),
+                }
+            });
+        };
+
+        todo!()
+    }
+
+    fn type_inner(&self, handle: naga::Handle<naga::Type>) -> &'p naga::TypeInner {
+        &self.module.naga.types[handle].inner
+    }
+
+    fn expected_type_inner(&self) -> &'p naga::TypeInner {
+        self.type_inner(self.expected_type)
+    }
+
+    fn expected_type_span(&self) -> Option<Span> {
+        let wgsl_span = self
+            .module
+            .naga
+            .types
+            .get_span(self.expected_type)
+            .to_range()?;
+        let wscript_span = self.module.source.span_from_text_range(wgsl_span);
+        let source_id = self.expr.span.0;
+        Some((source_id, wscript_span))
     }
 }
 
@@ -304,7 +355,26 @@ impl<B: AsRef<[u8]>> Bytes<B> {
 }
 
 impl ErrorKind {
-    pub fn build_report(&self, builder: &mut error::ReportBuilder) {
-        todo!()
+    pub fn build_report(&self, span: &Span, builder: &mut error::ReportBuilder) {
+        match *self {
+            ErrorKind::RangeNotArray {
+                ref expected_type_span,
+                ref expected_type_name,
+            } => {
+                builder.set_message(format!(
+                    "Range expressions must have array types, but this is expected to be of type `{}`",
+                    expected_type_name));
+                builder.add_label(
+                    ariadne::Label::new(span.clone())
+                        .with_message("this range expression will produce an array"),
+                );
+                if let Some(span) = expected_type_span.as_ref() {
+                    builder.add_label(
+                        ariadne::Label::new(span.clone())
+                            .with_message("the expression must produce a value of this type"),
+                    );
+                }
+            }
+        }
     }
 }

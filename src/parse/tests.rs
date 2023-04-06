@@ -241,10 +241,10 @@ fn parse_module() {
         Ok(ast::Statement {
             span: sp!(2..87),
             kind: ast::StatementKind::Module {
-                wgsl: ast::Wgsl { code, span: sp!(9..87) }
+                ref wgsl
             }
         })
-            if code.text == "var<uniform> buf: array<i32>;\n\nfn f() -> i32 { return buf[0]; }\n"
+            if wgsl.span == sp!(9..87) && wgsl.text == "var<uniform> buf: array<i32>;\n\nfn f() -> i32 { return buf[0]; }\n"
     );
 }
 

@@ -1,10 +1,10 @@
 //! Abstract syntax tree for wgpu-script.
-#![allow(dead_code)]
+#![allow(dead_code, unreachable_code)]
 
-use std::fmt;
+use std::{fmt, ops::Range};
 
 /// A span of wscript source code, as a byte range.
-pub type Span = (usize, std::ops::Range<usize>);
+pub type Span = (usize, Range<usize>);
 
 pub type Program = Vec<Statement>;
 
@@ -27,7 +27,7 @@ pub enum StatementKind {
     /// ```
     Module {
         /// WGSL source code for the compute shader.
-        wgsl: Wgsl,
+        wgsl: std::sync::Arc<CodeBlock>,
     },
 
     /// Initialize a buffer.
@@ -89,15 +89,6 @@ pub enum BufferIdKind {
 #[derive(Debug)]
 pub struct EntryPoint {
     pub name: String,
-    pub span: Span,
-}
-
-#[derive(Debug)]
-pub struct Wgsl {
-    /// WGSL source text, with all common indentation removed.
-    pub code: CodeBlock,
-
-    /// Position of this WGSL source code in the script.
     pub span: Span,
 }
 
@@ -213,15 +204,52 @@ pub enum VectorSize {
 /// The contents of a `"""` code block.
 #[derive(Debug, PartialEq)]
 pub struct CodeBlock {
+    /// Position of this WGSL source code in the script.
+    pub span: Span,
+
     /// The code represented. Common indentation and leading and trailing blank lines are removed.
     pub text: String,
 
     /// A mapping from positions in `text` to the corresponding byte ranges in
-    /// the input, so that we can find script spans corresponding to Naga spans.
+    /// the wscript source, so that we can find script spans corresponding to
+    /// Naga spans.
+    ///
+    /// Sorted by increasing start position. Input byte ranges do not overlap,
+    /// and are never empty.
     ///
     /// Since we trim trailing whitespace and normalize line endings, the newlines
-    /// in `text` are excluded from these ranges.
-    pub map: Vec<(usize, std::ops::Range<usize>)>,
+    /// in `text` are not covered by these ranges.
+    pub map: Vec<(usize, Range<usize>)>,
+}
+
+impl CodeBlock {
+    /// Find the wscript span corresponding to a byte range in `self.text`.
+    ///
+    /// Given a byte range in `self.text`, return the corresponding
+    /// byte range in the surrounding wscript.
+    pub fn span_from_text_range(&self, text_span: Range<usize>) -> Range<usize> {
+        let map = |pos| {
+            match self.map.binary_search_by_key(&pos, |&(start, _)| start) {
+                Ok(exact_index) => self.map[exact_index].1.start,
+                Err(insertion_index) => match self.map.get(insertion_index - 1) {
+                    None => {
+                        // This implies that `insertion_index` must be 0, which in
+                        // turn implies that `text_span.start` lies before any of
+                        // the ranges in `self.map`. Call it the start of the text.
+                        assert_eq!(insertion_index, 0);
+                        self.span.1.start
+                    }
+                    // The only characters in `self.text` not covered by `map`'s
+                    // spans are newlines, so even if `text_span.start` falls at the
+                    // end of the range, or one byte afterwards, it's still probably
+                    // fine to just return a position relative to range.start.
+                    Some(&(start, ref range)) => range.start + (pos - start),
+                },
+            }
+        };
+
+        map(text_span.start)..map(text_span.end)
+    }
 }
 
 pub fn join_spans(left: &Span, right: &Span) -> Span {

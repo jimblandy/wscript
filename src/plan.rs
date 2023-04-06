@@ -140,8 +140,12 @@ impl Planner {
         }
     }
 
-    fn plan_module(&mut self, statement: &ast::Statement, wgsl: &ast::Wgsl) -> Result<Box<Plan>> {
-        let module = Module::new(&wgsl, statement.span.clone())
+    fn plan_module(
+        &mut self,
+        statement: &ast::Statement,
+        wgsl: &Arc<ast::CodeBlock>,
+    ) -> Result<Box<Plan>> {
+        let module = Module::new(wgsl, statement.span.clone())
             .at(&statement.span, "in this `module` statement")?;
         let module = Arc::new(module);
         self.module = Some(module.clone());
@@ -157,8 +161,7 @@ impl Planner {
         let module = self.require_module(statement)?.clone();
         let handle = module.find_buffer_global(&buffer_id)?;
         let global = &module.naga.global_variables[handle];
-        let bytes_plan =
-            expr::plan_expression_bytes(value, &module, global.ty)?;
+        let bytes_plan = expr::plan_expression_bytes(value, &module, global.ty)?;
 
         let span = statement.span.clone();
         Ok(match self.global_buffers.entry(handle) {
@@ -219,8 +222,7 @@ impl Planner {
         let module = self.require_module(statement)?.clone();
         let handle = module.find_buffer_global(&buffer_id)?;
         let global = &module.naga.global_variables[handle];
-        let bytes_plan =
-            expr::plan_expression_bytes(value, &module, global.ty)?;
+        let bytes_plan = expr::plan_expression_bytes(value, &module, global.ty)?;
 
         let span = statement.span.clone();
         let mut occupied = match self.global_buffers.entry(handle) {

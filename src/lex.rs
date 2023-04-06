@@ -2,7 +2,7 @@
 
 use unicode_xid::UnicodeXID;
 
-use super::ast::{CodeBlock, Span, VectorSize};
+use super::ast::{Span, VectorSize};
 
 use std::str::FromStr;
 
@@ -26,7 +26,18 @@ pub enum TokenKind<'s> {
     Range,
 
     /// Triple-quoted, indented source code.
-    CodeBlock(CodeBlock),
+    CodeBlock {
+        /// The code represented. Common indentation and leading and trailing
+        /// blank lines are removed.
+        text: String,
+
+        /// A mapping from positions in `text` to input positions.
+        ///
+        /// See [`ast::CodeBlock`] for details.
+        ///
+        /// [`ast::CodeBlock`]: crate::ast::CodeBlock
+        map: Vec<(usize, std::ops::Range<usize>)>,
+    },
 
     Module,
     Init,
@@ -442,7 +453,7 @@ impl<'s> Input<'s> {
 
         Ok(Token {
             span,
-            kind: TokenKind::CodeBlock(CodeBlock { text, map }),
+            kind: TokenKind::CodeBlock { text, map },
         })
     }
 
@@ -480,7 +491,7 @@ impl<'s> TokenKind<'s> {
             TokenKind::Number(_) => "a number",
             TokenKind::Ident(ident) => return ident.to_string(),
             TokenKind::Range => "a range",
-            TokenKind::CodeBlock(_) => "a code block",
+            TokenKind::CodeBlock { .. } => "a code block",
             TokenKind::Module => "module",
             TokenKind::Init => "init",
             TokenKind::Dispatch => "dispatch",

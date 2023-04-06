@@ -167,10 +167,10 @@ fn indentation() {
 }
 
 fn code(text: &str, map: impl IntoIterator<Item = (usize, std::ops::Range<usize>)>) -> TokenKind {
-    TokenKind::CodeBlock(CodeBlock {
+    TokenKind::CodeBlock {
         text: text.to_string(),
         map: map.into_iter().collect(),
-    })
+    }
 }
 
 #[test]

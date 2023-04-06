@@ -1,8 +1,8 @@
 //! Errors produced in the planning stage.
 
+use super::expr;
 use crate::ast::{self, Span};
 use crate::error;
-use super::expr;
 
 use std::io;
 
@@ -120,7 +120,7 @@ impl error::AriadneReport for Error {
                 b.set_help("Buffer identifiers must refer to globals in the current shader module by name \
                             or by binding group and index.");
             }
-            ErrorKind::Expr(ref expr) => expr.build_report(b),
+            ErrorKind::Expr(ref expr) => expr.build_report(&self.span, b),
             ErrorKind::Anyhow {
                 ref error,
                 ref context,
