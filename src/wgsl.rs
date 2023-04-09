@@ -135,25 +135,12 @@ struct Scalar {
 impl fmt::Display for Scalar {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         use naga::ScalarKind as Sk;
-        f.write_str(match *self {
-            Self {
-                kind: Sk::Sint,
-                width: 4,
-            } => "i32",
-            Self {
-                kind: Sk::Uint,
-                width: 4,
-            } => "u32",
-            Self {
-                kind: Sk::Float,
-                width: 4,
-            } => "f32",
-            Self {
-                kind: Sk::Bool,
-                width: 1,
-            } => "bool",
-            _ => panic!("Unexpected Naga scalar: {:?}", self),
-        })
+        match self.kind {
+            Sk::Sint => write!(f, "i{}", self.width * 8),
+            Sk::Uint => write!(f, "u{}", self.width * 8),
+            Sk::Float => write!(f, "f{}", self.width * 8),
+            Sk::Bool => f.write_str("bool"),
+        }
     }
 }
 

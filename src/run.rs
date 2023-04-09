@@ -116,9 +116,10 @@ impl Context {
         // Newly created buffers should always be at the end of the array.
         assert_eq!(buffer_index, self.global_buffers.len());
         let label = id.kind.to_string();
+        let size = align_mapped_at_creation_buffer_size(value.byte_length() as wgpu::BufferAddress);
         let desc = wgpu::BufferDescriptor {
             label: Some(&label),
-            size: value.len() as wgpu::BufferAddress,
+            size,
             usage: self.summary.buffer_usage[buffer_index],
             mapped_at_creation: true,
         };
@@ -331,4 +332,9 @@ impl fmt::Display for RunBufferId {
             RunBufferId::Global(ref id) => write!(f, "{}", id.kind),
         }
     }
+}
+
+fn align_mapped_at_creation_buffer_size(size: wgpu::BufferAddress) -> wgpu::BufferAddress {
+    const MASK: wgpu::BufferAddress = wgpu::COPY_BUFFER_ALIGNMENT - 1;
+    (size + MASK) & !MASK
 }

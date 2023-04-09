@@ -21,8 +21,8 @@ pub type BytesPlan =
 
 /// A source of data to initialize a GPU buffer, or check its contents.
 pub trait ByteSource {
-    /// Return the remaining number of bytes this plan will generate.
-    fn len(&self) -> usize;
+    /// Return the number of bytes this plan will generate.
+    fn byte_length(&self) -> usize;
 
     /// Fill `buf` with the next `buf.len()` bytes from this source.
     ///
@@ -37,6 +37,28 @@ pub trait ByteSource {
     /// larger buffer. For error reporting, `offset` is the offset
     /// within that larger buffer at which `buf` occurs.
     fn compare(&mut self, buf: &[u8], offset: usize) -> run::ExprResult<Comparison>;
+
+    /// Return the span of the expression that generates these bytes.
+    fn span(&self) -> &Span;
+
+    /// The name of the type of value that said expression produces.
+    fn type_name(&self) -> &'static str;
+
+    fn check(&self, buf: &[u8], offset: usize) -> run::ExprResult<()> {
+        let needed = self.byte_length();
+        if buf.len() != needed {
+            return Err(run::ExprError {
+                span: self.span().clone(),
+                kind: run::ExprErrorKind::BufferTooShort {
+                    type_name: self.type_name(),
+                    needed,
+                    available: buf.len(),
+                    offset,
+                },
+            });
+        }
+        Ok(())
+    }
 }
 
 pub enum Comparison {
@@ -68,6 +90,24 @@ pub enum ErrorKind {
 
         /// The name of the expected type, as a string.
         expected_type_name: String,
+    },
+
+    /// The expected type of a range expression was not an array of scalars.
+    RangeNotScalarArray {
+        /// The expected type.
+        expected_type_span: Option<Span>,
+
+        /// The name of the expected type, as a string.
+        expected_type_name: String,
+    },
+
+    /// We can't use range expressions to generate arrays of this type.
+    UnsupportedScalarRangeType {
+        ty: String,
+    },
+
+    UnsupportedScalarType {
+        ty: String,
     },
 }
 
@@ -241,7 +281,61 @@ impl<'a, 'p> ExprPlanner<'a, 'p> {
             });
         };
 
-        todo!()
+        let Ti::Scalar { kind, width } = *self.type_inner(base) else {
+            return Err(Error {
+                span: self.expr.span.clone(),
+                kind: ErrorKind::RangeNotScalarArray {
+                    expected_type_span: self.expected_type_span(),
+                    expected_type_name: Wgsl((self.expected_type, &self.module.naga)).to_string(),
+                }
+            });
+        };
+
+        use naga::ScalarKind as Sk;
+        match (kind, width) {
+            (Sk::Sint, 4) => self.range::<i32>(base, left, right),
+            (Sk::Uint, 4) => self.range::<u32>(base, left, right),
+            (Sk::Float, 4) => self.range::<f32>(base, left, right),
+            (Sk::Sint | Sk::Uint | Sk::Float, _) => {
+                return Err(Error {
+                    span: self.expr.span.clone(),
+                    kind: ErrorKind::UnsupportedScalarType {
+                        ty: Wgsl((base, &self.module.naga)).to_string(),
+                    },
+                });
+            }
+            (Sk::Bool, _) => {
+                return Err(Error {
+                    span: self.expr.span.clone(),
+                    kind: ErrorKind::UnsupportedScalarRangeType {
+                        ty: Wgsl((base, &self.module.naga)).to_string(),
+                    },
+                });
+            }
+        }
+    }
+
+    fn range<T>(
+        &mut self,
+        expected_type: naga::Handle<naga::Type>,
+        start: &'a ast::Expression,
+        end: &'a ast::Expression,
+    ) -> Result<Box<BytesPlan>>
+    where
+        T: LeBytes + Scalar + 'static,
+    {
+        let span = self.expr.span.clone();
+        let start_plan = self.plan_subexpression_value::<T>(start, expected_type)?;
+        let end_plan = self.plan_subexpression_value::<T>(end, expected_type)?;
+        Ok(Box::new(move |ctx: &mut run::Context| {
+            let start = start_plan(ctx)?;
+            let end = end_plan(ctx)?;
+            Ok(Box::new(RangeBytes {
+                range: start..end,
+                span: span.clone(),
+                type_name: T::WGSL_NAME,
+            }))
+        }))
     }
 
     fn type_inner(&self, handle: naga::Handle<naga::Type>) -> &'p naga::TypeInner {
@@ -265,9 +359,13 @@ impl<'a, 'p> ExprPlanner<'a, 'p> {
     }
 }
 
-trait Scalar: Copy {
+trait Scalar: Copy + std::cmp::PartialOrd {
     fn from_literal(n: f64) -> Self;
+    fn as_usize(self) -> usize;
+    fn one() -> Self;
+
     fn add(left: Self, right: Self) -> Self;
+    fn sub(left: Self, right: Self) -> Self;
 }
 
 macro_rules! implement_scalar {
@@ -278,8 +376,20 @@ macro_rules! implement_scalar {
                     n as $t
                 }
 
+                fn as_usize(self) -> usize {
+                    self as usize
+                }
+
+                fn one() -> Self {
+                    1 as Self
+                }
+
                 fn add(left: Self, right: Self) -> Self {
                     left + right
+                }
+
+                fn sub(left: Self, right: Self) -> Self {
+                    left - right
                 }
             }
         )*
@@ -310,19 +420,19 @@ impl<B> ByteSource for Bytes<B>
 where
     B: AsRef<[u8]>,
 {
-    fn len(&self) -> usize {
+    fn byte_length(&self) -> usize {
         self.bytes.as_ref().len()
     }
 
     fn fill(&mut self, buf: &mut [u8], offset: usize) -> run::ExprResult<()> {
         self.check(buf, offset)?;
-        buf[..self.len()].copy_from_slice(self.bytes.as_ref());
+        buf[..self.byte_length()].copy_from_slice(self.bytes.as_ref());
         Ok(())
     }
 
     fn compare(&mut self, buf: &[u8], offset: usize) -> run::ExprResult<Comparison> {
         self.check(buf, offset)?;
-        for (i, (actual, expected)) in buf[..self.len()]
+        for (i, (actual, expected)) in buf[..self.byte_length()]
             .iter()
             .copied()
             .zip(self.bytes.as_ref().iter().copied())
@@ -332,25 +442,69 @@ where
                 return Ok(Comparison::Mismatch { offset: i });
             }
         }
-        Ok(Comparison::Matches { len: self.len() })
+        Ok(Comparison::Matches { len: self.byte_length() })
+    }
+
+    fn span(&self) -> &Span {
+        &self.span
+    }
+
+    fn type_name(&self) -> &'static str {
+        self.type_name
     }
 }
 
-impl<B: AsRef<[u8]>> Bytes<B> {
-    fn check(&self, buf: &[u8], offset: usize) -> run::ExprResult<()> {
-        let needed = std::mem::size_of::<B>();
-        if buf.len() < needed {
-            return Err(run::ExprError {
-                span: self.span.clone(),
-                kind: run::ExprErrorKind::BufferTooShort {
-                    type_name: self.type_name,
-                    needed,
-                    available: buf.len(),
-                    offset,
-                },
-            });
+struct RangeBytes<T> {
+    range: std::ops::Range<T>,
+    span: Span,
+    type_name: &'static str,
+}
+
+impl<T: Scalar> RangeBytes<T> {
+    fn value_count(&self) -> usize {
+        Scalar::sub(self.range.end, self.range.start).as_usize()
+    }
+}
+
+impl<T: LeBytes + Scalar> ByteSource for RangeBytes<T> {
+    fn byte_length(&self) -> usize {
+        self.value_count() * std::mem::size_of::<T>()
+    }
+
+    fn fill(&mut self, buf: &mut [u8], offset: usize) -> run::ExprResult<()> {
+        let len = self.byte_length();
+        self.check(buf, offset)?;
+
+        let mut i = self.range.start;
+        let values = std::iter::from_fn(|| {
+            if i >= self.range.end {
+                return None;
+            }
+
+            let next = i;
+            i = Scalar::add(i, Scalar::one());
+            Some(next)
+        });
+        let chunks = buf[..len].chunks_exact_mut(std::mem::size_of::<T>());
+        assert_eq!(chunks.len(), self.value_count());
+
+        for (chunk, value) in chunks.zip(values) {
+            chunk.copy_from_slice(value.to_le_bytes().as_ref());
         }
+
         Ok(())
+    }
+
+    fn compare(&mut self, buf: &[u8], offset: usize) -> run::ExprResult<Comparison> {
+        todo!()
+    }
+
+    fn span(&self) -> &Span {
+        &self.span
+    }
+
+    fn type_name(&self) -> &'static str {
+        self.type_name
     }
 }
 
@@ -375,6 +529,14 @@ impl ErrorKind {
                     );
                 }
             }
+            ErrorKind::RangeNotScalarArray {
+                ref expected_type_span,
+                ref expected_type_name,
+            } => {
+                todo!()
+            }
+            ErrorKind::UnsupportedScalarRangeType { .. } => todo!(),
+            ErrorKind::UnsupportedScalarType { .. } => todo!(),
         }
     }
 }
