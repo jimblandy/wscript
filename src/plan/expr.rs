@@ -231,12 +231,12 @@ impl<'a, 'p> ExprPlanner<'a, 'p> {
         match op {
             ast::BinaryOp::Range => todo!(),
             ast::BinaryOp::Add => {
-                let left_plan = self.plan_subexpression_value(left, self.expected_type)?;
-                let right_plan = self.plan_subexpression_value(right, self.expected_type)?;
+                let left_plan = self.plan_subexpression_value::<T>(left, self.expected_type)?;
+                let right_plan = self.plan_subexpression_value::<T>(right, self.expected_type)?;
                 Ok(Box::new(move |ctx: &mut run::Context| {
                     let left = left_plan(ctx)?;
                     let right = right_plan(ctx)?;
-                    Ok(T::add(left, right))
+                    Ok(left + right)
                 }))
             }
             ast::BinaryOp::Subtract => todo!(),
@@ -359,13 +359,15 @@ impl<'a, 'p> ExprPlanner<'a, 'p> {
     }
 }
 
-trait Scalar: Copy + std::cmp::PartialOrd {
+trait Scalar:
+    Copy
+    + std::ops::Add<Self, Output = Self>
+    + std::ops::Sub<Self, Output = Self>
+    + std::cmp::PartialOrd
+{
     fn from_literal(n: f64) -> Self;
     fn as_usize(self) -> usize;
     fn one() -> Self;
-
-    fn add(left: Self, right: Self) -> Self;
-    fn sub(left: Self, right: Self) -> Self;
 }
 
 macro_rules! implement_scalar {
@@ -382,14 +384,6 @@ macro_rules! implement_scalar {
 
                 fn one() -> Self {
                     1 as Self
-                }
-
-                fn add(left: Self, right: Self) -> Self {
-                    left + right
-                }
-
-                fn sub(left: Self, right: Self) -> Self {
-                    left - right
                 }
             }
         )*
@@ -442,7 +436,9 @@ where
                 return Ok(Comparison::Mismatch { offset: i });
             }
         }
-        Ok(Comparison::Matches { len: self.byte_length() })
+        Ok(Comparison::Matches {
+            len: self.byte_length(),
+        })
     }
 
     fn span(&self) -> &Span {
@@ -462,7 +458,7 @@ struct RangeBytes<T> {
 
 impl<T: Scalar> RangeBytes<T> {
     fn value_count(&self) -> usize {
-        Scalar::sub(self.range.end, self.range.start).as_usize()
+        (self.range.end - self.range.start).as_usize()
     }
 }
 
@@ -482,7 +478,7 @@ impl<T: LeBytes + Scalar> ByteSource for RangeBytes<T> {
             }
 
             let next = i;
-            i = Scalar::add(i, Scalar::one());
+            i = i + Scalar::one();
             Some(next)
         });
         let chunks = buf[..len].chunks_exact_mut(std::mem::size_of::<T>());
