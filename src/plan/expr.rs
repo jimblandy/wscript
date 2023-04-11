@@ -44,20 +44,8 @@ pub trait ByteSource {
     /// The name of the type of value that said expression produces.
     fn type_name(&self) -> &'static str;
 
-    fn check(&self, buf: &[u8], offset: usize) -> run::ExprResult<()> {
-        let needed = self.byte_length();
-        if buf.len() != needed {
-            return Err(run::ExprError {
-                span: self.span().clone(),
-                kind: run::ExprErrorKind::BufferTooShort {
-                    type_name: self.type_name(),
-                    needed,
-                    available: buf.len(),
-                    offset,
-                },
-            });
-        }
-        Ok(())
+    fn check(&self, buf: &[u8], offset: usize) {
+        assert_eq!(buf.len(), self.byte_length());
     }
 }
 
@@ -419,13 +407,13 @@ where
     }
 
     fn fill(&mut self, buf: &mut [u8], offset: usize) -> run::ExprResult<()> {
-        self.check(buf, offset)?;
+        self.check(buf, offset);
         buf[..self.byte_length()].copy_from_slice(self.bytes.as_ref());
         Ok(())
     }
 
     fn compare(&mut self, buf: &[u8], offset: usize) -> run::ExprResult<Comparison> {
-        self.check(buf, offset)?;
+        self.check(buf, offset);
         for (i, (actual, expected)) in buf[..self.byte_length()]
             .iter()
             .copied()
@@ -469,7 +457,7 @@ impl<T: LeBytes + Scalar> ByteSource for RangeBytes<T> {
 
     fn fill(&mut self, buf: &mut [u8], offset: usize) -> run::ExprResult<()> {
         let len = self.byte_length();
-        self.check(buf, offset)?;
+        self.check(buf, offset);
 
         let mut i = self.range.start;
         let values = std::iter::from_fn(|| {

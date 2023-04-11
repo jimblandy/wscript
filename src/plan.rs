@@ -166,6 +166,7 @@ impl Planner {
         let span = statement.span.clone();
         Ok(match self.global_buffers.entry(handle) {
             Entry::Occupied(mut occupied) => {
+                eprintln!("JIMB: Occupied");
                 // Note that we're going to need to be able to map
                 // this buffer for writing.
                 occupied.get_mut().usage |= wgpu::BufferUsages::MAP_WRITE;
@@ -185,6 +186,7 @@ impl Planner {
                 })
             }
             Entry::Vacant(vacant) => {
+                eprintln!("JIMB: Vacant");
                 let buffer_index = vacant.index();
 
                 // We're creating and initializing the buffer.
