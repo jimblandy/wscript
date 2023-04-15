@@ -141,8 +141,8 @@ impl<'s> Input<'s> {
         let whole_len = self.text.len();
         let mut token_start;
 
-        self.rest = self.rest.trim_start();
         let token = loop {
+            self.rest = self.rest.trim_start();
             token_start = whole_len - self.rest.len();
             if self.rest.is_empty() {
                 // End of input.

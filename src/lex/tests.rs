@@ -95,6 +95,9 @@ fn basic() {
     assert_eq!(collect_tokens("// comment no newline"),
                vec![(TokenKind::End, 21..21)]);
 
+    assert_eq!(collect_tokens("// comment followed by whitespace\n\n"),
+               vec![(TokenKind::End, 35..35)]);
+
     assert_eq!(collect_tokens("mat2x3 4 5 6 groo:s"),
                vec![
                    (TokenKind::Mat { columns: Vec2, rows: Vec3 }, 0..6),
