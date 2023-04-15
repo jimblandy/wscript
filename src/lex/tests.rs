@@ -22,91 +22,91 @@ fn collect_tokens(input: &str) -> Vec<(TokenKind, std::ops::Range<usize>)> {
 }
 
 #[test]
-    #[rustfmt::skip]
-    fn basic() {
-        use VectorSize::*;
+#[rustfmt::skip]
+fn basic() {
+    use VectorSize::*;
 
-        assert_eq!(collect_tokens(""), vec![(TokenKind::End, 0..0)]);
-        assert_eq!(collect_tokens("+-{}()<>"), 
-                   vec![
-                       (TokenKind::Symbol('+'), 0..1),
-                       (TokenKind::Symbol('-'), 1..2),
-                       (TokenKind::Symbol('{'), 2..3),
-                       (TokenKind::Symbol('}'), 3..4),
-                       (TokenKind::Symbol('('), 4..5),
-                       (TokenKind::Symbol(')'), 5..6),
-                       (TokenKind::Symbol('<'), 6..7),
-                       (TokenKind::Symbol('>'), 7..8),
-                       (TokenKind::End, 8..8)
-                   ]);
+    assert_eq!(collect_tokens(""), vec![(TokenKind::End, 0..0)]);
+    assert_eq!(collect_tokens("+-{}()<>"), 
+               vec![
+                   (TokenKind::Symbol('+'), 0..1),
+                   (TokenKind::Symbol('-'), 1..2),
+                   (TokenKind::Symbol('{'), 2..3),
+                   (TokenKind::Symbol('}'), 3..4),
+                   (TokenKind::Symbol('('), 4..5),
+                   (TokenKind::Symbol(')'), 5..6),
+                   (TokenKind::Symbol('<'), 6..7),
+                   (TokenKind::Symbol('>'), 7..8),
+                   (TokenKind::End, 8..8)
+               ]);
 
-        assert_eq!(collect_tokens("module..dispatch check  group\tbinding array\n init"),
-                   vec![
-                        (TokenKind::Module,   0..6),
-                        (TokenKind::Range,    6..8),
-                        (TokenKind::Dispatch, 8..16),
-                        (TokenKind::Check,    17..22),
-                        (TokenKind::Group,    24..29),
-                        (TokenKind::Binding,  30..37),
-                        (TokenKind::Array,    38..43),
-                        (TokenKind::Init,     45..49),
-                        (TokenKind::End,      49..49),
-                   ]);
+    assert_eq!(collect_tokens("module..dispatch check  group\tbinding array\n init"),
+               vec![
+                   (TokenKind::Module,   0..6),
+                   (TokenKind::Range,    6..8),
+                   (TokenKind::Dispatch, 8..16),
+                   (TokenKind::Check,    17..22),
+                   (TokenKind::Group,    24..29),
+                   (TokenKind::Binding,  30..37),
+                   (TokenKind::Array,    38..43),
+                   (TokenKind::Init,     45..49),
+                   (TokenKind::End,      49..49),
+               ]);
 
-        assert_eq!(collect_tokens("       f32 // comment\n\
-                                   // comment at beginning of line\n\
-                                   i32\n\
-                                   u32 bool        "),
-                   vec![
-                       (TokenKind::F32, 7..10),
-                       (TokenKind::I32, 54..57),
-                       (TokenKind::U32, 58..61),
-                       (TokenKind::Bool, 62..66),
-                       (TokenKind::End, 74..74),
-                   ]);
+    assert_eq!(collect_tokens("       f32 // comment\n\
+                               // comment at beginning of line\n\
+                               i32\n\
+                               u32 bool        "),
+               vec![
+                   (TokenKind::F32, 7..10),
+                   (TokenKind::I32, 54..57),
+                   (TokenKind::U32, 58..61),
+                   (TokenKind::Bool, 62..66),
+                   (TokenKind::End, 74..74),
+               ]);
 
-        assert_eq!(collect_tokens("vec2 vec3 vec4"),
-                   vec![
-                       (TokenKind::Vec(Vec2), 0..4),
-                       (TokenKind::Vec(Vec3), 5..9),
-                       (TokenKind::Vec(Vec4), 10..14),
-                       (TokenKind::End, 14..14)
-                   ]);
+    assert_eq!(collect_tokens("vec2 vec3 vec4"),
+               vec![
+                   (TokenKind::Vec(Vec2), 0..4),
+                   (TokenKind::Vec(Vec3), 5..9),
+                   (TokenKind::Vec(Vec4), 10..14),
+                   (TokenKind::End, 14..14)
+               ]);
 
-        assert_eq!(collect_tokens("mat2x2 mat2x3 mat2x4 \
-                                   mat3x2 mat3x3 mat3x4 \
-                                   mat4x2 mat4x3 mat4x4"),
-                   vec![
-                       (TokenKind::Mat { columns: Vec2, rows: Vec2 }, 0..6),
-                       (TokenKind::Mat { columns: Vec2, rows: Vec3 }, 7..13),
-                       (TokenKind::Mat { columns: Vec2, rows: Vec4 }, 14..20),
-                       (TokenKind::Mat { columns: Vec3, rows: Vec2 }, 21..27),
-                       (TokenKind::Mat { columns: Vec3, rows: Vec3 }, 28..34),
-                       (TokenKind::Mat { columns: Vec3, rows: Vec4 }, 35..41),
-                       (TokenKind::Mat { columns: Vec4, rows: Vec2 }, 42..48),
-                       (TokenKind::Mat { columns: Vec4, rows: Vec3 }, 49..55),
-                       (TokenKind::Mat { columns: Vec4, rows: Vec4 }, 56..62),
-                       (TokenKind::End, 62..62)
-                   ]);
+    assert_eq!(collect_tokens("mat2x2 mat2x3 mat2x4 \
+                               mat3x2 mat3x3 mat3x4 \
+                               mat4x2 mat4x3 mat4x4"),
+               vec![
+                   (TokenKind::Mat { columns: Vec2, rows: Vec2 }, 0..6),
+                   (TokenKind::Mat { columns: Vec2, rows: Vec3 }, 7..13),
+                   (TokenKind::Mat { columns: Vec2, rows: Vec4 }, 14..20),
+                   (TokenKind::Mat { columns: Vec3, rows: Vec2 }, 21..27),
+                   (TokenKind::Mat { columns: Vec3, rows: Vec3 }, 28..34),
+                   (TokenKind::Mat { columns: Vec3, rows: Vec4 }, 35..41),
+                   (TokenKind::Mat { columns: Vec4, rows: Vec2 }, 42..48),
+                   (TokenKind::Mat { columns: Vec4, rows: Vec3 }, 49..55),
+                   (TokenKind::Mat { columns: Vec4, rows: Vec4 }, 56..62),
+                   (TokenKind::End, 62..62)
+               ]);
 
-        assert_eq!(collect_tokens("// comment until end\n"),
-                   vec![(TokenKind::End, 21..21)]);
+    assert_eq!(collect_tokens("// comment until end\n"),
+               vec![(TokenKind::End, 21..21)]);
 
-        assert_eq!(collect_tokens("// comment no newline"),
-                   vec![(TokenKind::End, 21..21)]);
+    assert_eq!(collect_tokens("// comment no newline"),
+               vec![(TokenKind::End, 21..21)]);
 
-        assert_eq!(collect_tokens("mat2x3 4 5 6 groo:s"),
-                   vec![
-                       (TokenKind::Mat { columns: Vec2, rows: Vec3 }, 0..6),
-                       (TokenKind::Number(4.0), 7..8),
-                       (TokenKind::Number(5.0), 9..10),
-                       (TokenKind::Number(6.0), 11..12),
-                       (TokenKind::Ident("groo"), 13..17),
-                       (TokenKind::Symbol(':'), 17..18),
-                       (TokenKind::Ident("s"), 18..19),
-                       (TokenKind::End, 19..19),
-                   ]);
-    }
+    assert_eq!(collect_tokens("mat2x3 4 5 6 groo:s"),
+               vec![
+                   (TokenKind::Mat { columns: Vec2, rows: Vec3 }, 0..6),
+                   (TokenKind::Number(4.0), 7..8),
+                   (TokenKind::Number(5.0), 9..10),
+                   (TokenKind::Number(6.0), 11..12),
+                   (TokenKind::Ident("groo"), 13..17),
+                   (TokenKind::Symbol(':'), 17..18),
+                   (TokenKind::Ident("s"), 18..19),
+                   (TokenKind::End, 19..19),
+               ]);
+}
 
 fn check_number(input: &str) -> (f64, std::ops::Range<usize>) {
     let mut input = Input::new(input, 1728);
