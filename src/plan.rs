@@ -28,7 +28,7 @@ use crate::run;
 use error::IntoPlanResult as _;
 pub use error::{Error, ErrorKind, Result};
 pub use expr::Error as ExprError;
-pub use expr::{ByteSource, Comparison};
+pub use expr::{BytesPlan, ByteSource, Comparison};
 use indexmap::map::Entry;
 use little_endian_bytes::LeBytes;
 pub use module::Module;
@@ -85,6 +85,7 @@ struct Planner {
 
 /// Planning information about GPU buffers.
 struct Buffer {
+    /// The usage flags we'll need when this buffer is created.
     usage: wgpu::BufferUsages,
 }
 
@@ -128,7 +129,7 @@ impl Planner {
             ast::StatementKind::Init {
                 ref buffer,
                 ref value,
-            } => self.plan_init(statement, buffer.clone(), value),
+            } => self.plan_init(statement, buffer, value),
             ast::StatementKind::Dispatch {
                 ref entry_point,
                 ref count,
@@ -155,64 +156,64 @@ impl Planner {
     fn plan_init(
         &mut self,
         statement: &ast::Statement,
-        buffer_id: ast::BufferId,
+        buffer_id: &ast::BufferId,
         value: &ast::Expression,
     ) -> Result<Box<Plan>> {
         let module = self.require_module(statement)?.clone();
-        let handle = module.find_buffer_global(&buffer_id)?;
+        let handle = module.find_buffer_global(buffer_id)?;
         let global = &module.naga.global_variables[handle];
-        let bytes_plan = expr::plan_expression_bytes(value, &module, global.ty)?;
+        let mut label = String::new();
 
-        let span = statement.span.clone();
-        Ok(match self.global_buffers.entry(handle) {
-            Entry::Occupied(mut occupied) => {
-                eprintln!("JIMB: Occupied");
-                // Note that we're going to need to be able to map
-                // this buffer for writing.
-                occupied.get_mut().usage |= wgpu::BufferUsages::MAP_WRITE;
-
-                // We've already created this buffer, we're just overwriting its
-                // contents.
-                let buffer_index = occupied.index();
-                Box::new(move |ctx: &mut run::Context| {
-                    let bytes = bytes_plan(ctx).map_err(|inner| run::Error {
-                        span: span.clone(),
-                        kind: run::ErrorKind::InitExpression {
-                            inner: Box::new(inner),
-                            buffer: buffer_id.kind.to_string(),
-                        },
-                    })?;
-                    ctx.run_init_buffer(buffer_index, bytes, &span)
-                })
+        let buffer_index = match self.global_buffers.entry(handle) {
+            // We've already created this buffer, we're just overwriting its
+            // contents.
+            Entry::Occupied(mut entry) => {
+                // We're going to need to copy data into this buffer.
+                entry.get_mut().usage |= wgpu::BufferUsages::COPY_DST;
+                entry.index()
             }
-            Entry::Vacant(vacant) => {
-                eprintln!("JIMB: Vacant");
-                let buffer_index = vacant.index();
 
-                // We're creating and initializing the buffer.
-                //
-                // Choose initial usage flags for the buffer. As we process the
-                // rest of the script, we'll add more flags as we learn more
-                // about how the buffer gets used.
-                vacant.insert(Buffer {
+            // We're creating and initializing the buffer.
+            Entry::Vacant(entry) => {
+                let buffer_index = entry.index();
+
+                // Choose a label for the buffer.
+                label = buffer_id.kind.to_string();
+
+                // Choose initial usage flags for the buffer. We can do the
+                // initialization with `mapped_at_creation`, so we can leave the
+                // usage flags minimal for now. As we plan the rest of the
+                // script, we'll add more flags as we learn more about how the
+                // buffer gets used.
+                entry.insert(Buffer {
                     usage: initial_buffer_usage_from_space(global.space),
                 });
 
-                Box::new(move |ctx: &mut run::Context| {
-                    let bytes: Box<dyn expr::ByteSource + 'static> =
-                        bytes_plan(ctx).map_err(|inner| run::Error {
-                            span: span.clone(),
-                            kind: run::ErrorKind::InitExpression {
-                                inner: Box::new(inner),
-                                buffer: buffer_id.kind.to_string(),
-                            },
-                        })?;
-                    ctx.run_create_buffer(buffer_index, buffer_id.clone(), &*bytes)?;
 
-                    ctx.run_init_buffer(buffer_index, bytes, &span)
-                })
+                buffer_index
             }
-        })
+        };
+
+        let source = &*module.source;
+        let source_id = source.span.0;
+        let buffer_decl_span = module.naga.global_variables
+            .get_span(handle)
+            .to_range()
+            .map(|range| (source_id, source.span_from_text_range(range)));
+        let statement_span = statement.span.clone();
+        let bytes_plan = expr::plan_expression_bytes(value, &module, global.ty)?;
+        Ok(Box::new(move |ctx: &mut run::Context| {
+            let bytes: Box<dyn expr::ByteSource + 'static> =
+                bytes_plan(ctx).map_err(|inner| run::Error {
+                    span: statement_span.clone(),
+                    kind: run::ErrorKind::InitExpression {
+                        inner: Box::new(inner),
+                        buffer: label.clone(),
+                        buffer_decl: buffer_decl_span.clone(),
+                    },
+                })?;
+            ctx.run_init_buffer(buffer_index, bytes, &label, &statement_span)
+        }))
     }
 
     fn plan_check(
@@ -272,27 +273,11 @@ impl Planner {
 
 /// Given a buffer's address space, choose its initial usage flags.
 fn initial_buffer_usage_from_space(space: naga::AddressSpace) -> wgpu::BufferUsages {
-    use naga::StorageAccess as Sa;
     use wgpu::BufferUsages as Bu;
 
     match space {
         naga::AddressSpace::Uniform => Bu::UNIFORM,
-        naga::AddressSpace::Storage { access } => {
-            let mut usage = Bu::STORAGE;
-            // If the shader is going to read from it, then we'd
-            // better be able to write to it.
-            if access.contains(Sa::LOAD) {
-                usage |= Bu::COPY_DST;
-            }
-
-            // Conversely, if the shader is going to write to it,
-            // then we'd better be able to read from it.
-            if access.contains(Sa::STORE) {
-                usage |= Bu::COPY_SRC;
-            }
-
-            usage
-        }
+        naga::AddressSpace::Storage { .. } => Bu::STORAGE,
         naga::AddressSpace::Function
         | naga::AddressSpace::Private
         | naga::AddressSpace::WorkGroup

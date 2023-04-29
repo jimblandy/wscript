@@ -16,10 +16,15 @@ use std::{fs, path};
 
 /// Run a given wscript, and check that it exited without error.
 fn run(path: &path::Path) -> Result<()> {
-    let mut cache = error::Cache::default();
+    // Read the input script.
     let script = fs::read_to_string(path)
         .with_context(|| format!("error reading script from {}", path.display()))?;
-    let source_id = cache.insert(path.to_owned(), &script);
+
+    // Prepare the Ariadne source cache.
+    let mut cache = error::Cache::default();
+    // Don't include the directory name in the error message.
+    let file_name: path::PathBuf = path.file_name().unwrap().to_owned().into();
+    let source_id = cache.insert(file_name, &script);
 
     let program = match parse::parse(&script, source_id) {
         Ok(program) => program,

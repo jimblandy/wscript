@@ -25,7 +25,8 @@ impl<'a> Context<'a> {
                 self.parse_check(span)
             }
             _ => {
-                let Token { span, .. } = self.next()?;
+                let next = self.next()?;
+                let Token { span, .. } = next;
                 Err(ParseError {
                     span,
                     kind: ParseErrorKind::ExpectedStatement,

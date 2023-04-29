@@ -8,8 +8,8 @@ use std::path::PathBuf;
 use std::result::Result as StdResult;
 use std::{fmt, io};
 
-pub type Report = ariadne::Report<ast::Span>;
-pub type ReportBuilder = ariadne::ReportBuilder<ast::Span>;
+pub type Report<'a> = ariadne::Report<'a, ast::Span>;
+pub type ReportBuilder<'a> = ariadne::ReportBuilder<'a, ast::Span>;
 
 /// An `ariadne::Cache` implementation.
 ///

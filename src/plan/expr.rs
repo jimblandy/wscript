@@ -156,7 +156,7 @@ impl<'a, 'p> ExprPlanner<'a, 'p> {
     where
         T: LeBytes + Scalar + 'static,
     {
-        let value_plan: Box<ValuePlan<T>> = self.plan_scalar_value()?;
+        let value_plan: Box<ValuePlan<T>> = self.plan_value()?;
         let span = self.expr.span.clone();
         Ok(Box::new(move |ctx: &mut run::Context| {
             let value = value_plan(ctx)?;
@@ -181,15 +181,15 @@ impl<'a, 'p> ExprPlanner<'a, 'p> {
             expected_type,
             module: &*self.module,
         }
-        .plan_scalar_value()
+        .plan_value()
     }
 
-    fn plan_scalar_value<T>(&mut self) -> Result<Box<ValuePlan<T>>>
+    fn plan_value<T>(&mut self) -> Result<Box<ValuePlan<T>>>
     where
         T: Scalar + 'static,
     {
         match self.expr.kind {
-            ast::ExpressionKind::Literal(n) => Ok(plan_value::<T>(T::from_literal(n))),
+            ast::ExpressionKind::Literal(n) => Ok(plan_constant::<T>(T::from_literal(n))),
             ast::ExpressionKind::Sequence(_) => todo!(),
             ast::ExpressionKind::Unary { op: _, operand: _ } => todo!(),
             ast::ExpressionKind::Binary {
@@ -197,7 +197,7 @@ impl<'a, 'p> ExprPlanner<'a, 'p> {
                 op,
                 ref op_span,
                 ref right,
-            } => self.plan_binary_scalar_value(left, op, op_span, right),
+            } => self.plan_binary_value(left, op, op_span, right),
             ast::ExpressionKind::Nullary(_) => todo!(),
             ast::ExpressionKind::Vec(_) => todo!(),
         }
@@ -206,7 +206,7 @@ impl<'a, 'p> ExprPlanner<'a, 'p> {
         // then convert to bytes.
     }
 
-    fn plan_binary_scalar_value<T>(
+    fn plan_binary_value<T>(
         &mut self,
         left: &'a ast::Expression,
         op: ast::BinaryOp,
@@ -279,11 +279,14 @@ impl<'a, 'p> ExprPlanner<'a, 'p> {
             });
         };
 
+        let length = size.to_indexable_length(&self.module.naga)
+            .expect("Naga validation failed to catch invalid indexable length");
+
         use naga::ScalarKind as Sk;
         match (kind, width) {
-            (Sk::Sint, 4) => self.range::<i32>(base, left, right),
-            (Sk::Uint, 4) => self.range::<u32>(base, left, right),
-            (Sk::Float, 4) => self.range::<f32>(base, left, right),
+            (Sk::Sint, 4) => self.plan_typed_range_bytes::<i32>(base, length, left, right),
+            (Sk::Uint, 4) => self.plan_typed_range_bytes::<u32>(base, length, left, right),
+            (Sk::Float, 4) => self.plan_typed_range_bytes::<f32>(base, length, left, right),
             (Sk::Sint | Sk::Uint | Sk::Float, _) => {
                 return Err(Error {
                     span: self.expr.span.clone(),
@@ -303,14 +306,15 @@ impl<'a, 'p> ExprPlanner<'a, 'p> {
         }
     }
 
-    fn range<T>(
+    fn plan_typed_range_bytes<T>(
         &mut self,
         expected_type: naga::Handle<naga::Type>,
+        length: naga::proc::IndexableLength,
         start: &'a ast::Expression,
         end: &'a ast::Expression,
     ) -> Result<Box<BytesPlan>>
     where
-        T: LeBytes + Scalar + 'static,
+        T: RangeEndPoint + 'static,
     {
         let span = self.expr.span.clone();
         let start_plan = self.plan_subexpression_value::<T>(start, expected_type)?;
@@ -318,6 +322,19 @@ impl<'a, 'p> ExprPlanner<'a, 'p> {
         Ok(Box::new(move |ctx: &mut run::Context| {
             let start = start_plan(ctx)?;
             let end = end_plan(ctx)?;
+            if let naga::proc::IndexableLength::Known(known) = length {
+                let needed = known as usize;
+                let actual = RangeEndPoint::value_count(start, end);
+                if actual != needed {
+                    return Err(run::ExprError {
+                        span: span.clone(),
+                        kind: run::ExprErrorKind::BadRangeCount {
+                            needed,
+                            actual
+                        }
+                    });
+                }
+            }
             Ok(Box::new(RangeBytes {
                 range: start..end,
                 span: span.clone(),
@@ -391,7 +408,7 @@ struct Bytes<B: AsRef<[u8]>> {
     type_name: &'static str,
 }
 
-fn plan_value<T>(value: T) -> Box<ValuePlan<T>>
+fn plan_constant<T>(value: T) -> Box<ValuePlan<T>>
 where
     T: Copy + 'static,
 {
@@ -444,13 +461,47 @@ struct RangeBytes<T> {
     type_name: &'static str,
 }
 
-impl<T: Scalar> RangeBytes<T> {
-    fn value_count(&self) -> usize {
-        (self.range.end - self.range.start).as_usize()
+trait RangeEndPoint: LeBytes + Scalar + std::fmt::Debug {
+    fn value_count(start: Self, end: Self) -> usize;
+}
+
+impl RangeEndPoint for i32 {
+    fn value_count(start: Self, end: Self) -> usize {
+        if end > start {
+            (end - start) as usize
+        } else {
+            0
+        }
     }
 }
 
-impl<T: LeBytes + Scalar> ByteSource for RangeBytes<T> {
+impl RangeEndPoint for u32 {
+    fn value_count(start: Self, end: Self) -> usize {
+        if end > start {
+            (end - start) as usize
+        } else {
+            0
+        }
+    }
+}
+
+impl RangeEndPoint for f32 {
+    fn value_count(start: Self, end: Self) -> usize {
+        if end > start {
+            (end - start).ceil() as usize
+        } else {
+            0
+        }
+    }
+}
+
+impl<T: RangeEndPoint> RangeBytes<T> {
+    fn value_count(&self) -> usize {
+        T::value_count(self.range.start, self.range.end)
+    }
+}
+
+impl<T: RangeEndPoint> ByteSource for RangeBytes<T> {
     fn byte_length(&self) -> usize {
         self.value_count() * std::mem::size_of::<T>()
     }

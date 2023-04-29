@@ -22,6 +22,10 @@ pub enum ErrorKind {
 
         /// The id of the buffer we were trying to initialize.
         buffer: String,
+
+        /// The span of the buffer's declaration in the module, if
+        /// Naga knows it
+        buffer_decl: Option<Span>,
     },
 
     /// The error `inner` occurred while executing a `check` statement.
@@ -94,6 +98,16 @@ pub enum ExprErrorKind {
         /// The offset at which we were trying to store the value.
         offset: usize,
     },
+
+    /// A range expression doesn't evaluate to the right number of
+    /// elements to initialize an array.
+    BadRangeCount {
+        /// The number of values that were needed.
+        needed: usize,
+
+        /// The number of values the range expression was going to produce.
+        actual: usize,
+    }
 }
 
 /// Types that can be converted into a `run::error::Result` by
@@ -117,7 +131,7 @@ impl<T> IntoRunResult<T> for anyhow::Result<T> {
 impl error::AriadneReport for Error {
     fn write_with_config<W>(
         &self,
-        mut stream: W,
+        stream: W,
         cache: &mut error::Cache,
         config: ariadne::Config,
     ) -> io::Result<()>
@@ -141,15 +155,12 @@ impl error::AriadneReport for Error {
             ErrorKind::InitExpression {
                 ref inner,
                 ref buffer,
+                ref buffer_decl,
             } => {
-                inner.write_with_config(&mut stream, cache, config)?;
+                inner.build(&mut builder);
                 builder.add_label(
-                    ariadne::Label::new(self.span.clone())
+                    ariadne::Label::new(buffer_decl.unwrap_or(self.span).clone())
                         .with_message(format!("while initializing buffer {buffer}")),
-                );
-                builder.add_label(
-                    ariadne::Label::new(self.span.clone())
-                        .with_message("while executing this statement"),
                 );
             }
 
@@ -157,14 +168,10 @@ impl error::AriadneReport for Error {
                 ref inner,
                 ref buffer,
             } => {
-                inner.write_with_config(&mut stream, cache, config)?;
+                inner.build(&mut builder);
                 builder.add_label(
                     ariadne::Label::new(self.span.clone())
                         .with_message(format!("while checking contents of buffer {buffer}")),
-                );
-                builder.add_label(
-                    ariadne::Label::new(self.span.clone())
-                        .with_message("while executing this statement"),
                 );
             }
 
@@ -184,22 +191,12 @@ impl error::AriadneReport for Error {
     }
 }
 
-impl error::AriadneReport for ExprError {
-    fn write_with_config<W>(
+impl ExprError {
+    fn build(
         &self,
-        stream: W,
-        cache: &mut error::Cache,
-        config: ariadne::Config,
-    ) -> io::Result<()>
-    where
-        W: io::Write,
+        builder: &mut error::ReportBuilder,
+    )
     {
-        use ariadne::{Report, ReportKind};
-
-        let (source_id, range) = self.span.clone();
-        let mut builder =
-            Report::<Span>::build(ReportKind::Error, source_id, range.start).with_config(config);
-
         match self.kind {
             ExprErrorKind::BufferTooShort {
                 type_name,
@@ -213,11 +210,17 @@ impl error::AriadneReport for ExprError {
                 builder.add_label(
                     ariadne::Label::new(self.span.clone()).with_message("this value doesn't fit"),
                 );
-                builder.set_help(format!("value needs {needed} bytes, but only {available} bytes are available at offset {offset} in the buffer"));
+                builder.set_help(format!("value needs {needed} bytes, but only {available} bytes \
+                                          are available at offset {offset} in the buffer"));
+            }
+            ExprErrorKind::BadRangeCount { needed, actual } => {
+                builder.set_message("range expression returned the wrong number of elements for array");
+                builder.add_label(
+                    ariadne::Label::new(self.span.clone()).with_message("this range expression"),
+                );
+                builder.set_help(format!("the array being initialized has {needed} elements, \
+                                          but the range expression only produced {actual} elements"));
             }
         }
-
-        let report = builder.finish();
-        report.write(cache, stream)
     }
 }

@@ -3,7 +3,6 @@ use std::borrow::Cow;
 use crate::{ast, plan};
 use anyhow::anyhow;
 use pollster::block_on;
-use std::fmt;
 
 mod error;
 
@@ -33,7 +32,7 @@ pub struct Context {
     ///
     /// Indices parallel those in [`Planner::global_buffers`].
     ///
-    /// [`Planner::buffers`]: crate::plan::Planner::buffers
+    /// [`Planner::global_buffers`]: crate::plan::Planner::global_buffers
     pub global_buffers: Vec<Buffer>,
 
     /// A readback buffer.
@@ -49,14 +48,8 @@ pub struct Buffer {
     /// True if currently mapped.
     mapped: bool,
 
-    /// The way the buffer was named when it was first initialized.
-    id: RunBufferId,
-}
-
-#[derive(Debug)]
-enum RunBufferId {
-    Readback,
-    Global(ast::BufferId),
+    /// Label to use for the buffer in error messages.
+    label: String,
 }
 
 impl Context {
@@ -107,52 +100,27 @@ impl Context {
         Ok(())
     }
 
-    pub fn run_create_buffer(
-        &mut self,
-        buffer_index: usize,
-        id: ast::BufferId,
-        value: &dyn plan::ByteSource,
-    ) -> Result<()> {
-        // Newly created buffers should always be at the end of the array.
-        assert_eq!(buffer_index, self.global_buffers.len());
-        let label = id.kind.to_string();
-        let size = align_mapped_at_creation_buffer_size(value.byte_length() as wgpu::BufferAddress);
-        let desc = wgpu::BufferDescriptor {
-            label: Some(&label),
-            size,
-            usage: self.summary.buffer_usage[buffer_index],
-            mapped_at_creation: true,
-        };
-        self.global_buffers
-            .push(Buffer::new(&self.device, &desc, RunBufferId::Global(id)));
-        Ok(())
-    }
-
     pub fn run_init_buffer(
         &mut self,
         buffer_index: usize,
-        mut value: Box<dyn plan::ByteSource>,
+        bytes_plan: &plan::BytesPlan,
+        label: &str,
         span: &ast::Span,
-    ) -> Result<()> {
+    ) -> ExprResult<()> {
+        let bytes = bytes_plan(self)?;
+
+        // Do we need to create this buffer?
+        if buffer_index >= self.global_buffers.len() {
+            self.create_buffer(buffer_index, label, bytes.byte_length());
+        }
+        
         let buffer = &mut self.global_buffers[buffer_index];
         let slice = buffer
             .wait_until_mapped(&self.device, .., wgpu::MapMode::Write)
             .at(span, "mapping buffer for initialization")?;
-        let result = {
-            let mut view = slice.get_mapped_range_mut();
-            value.fill(&mut view, 0)
-        };
-        if let Err(inner) = result {
-            return Err(Error {
-                span: span.clone(),
-                kind: ErrorKind::InitExpression {
-                    inner: Box::new(inner),
-                    buffer: buffer.id.to_string(),
-                },
-            });
-        }
 
-        buffer.unmap();
+        let mut view = slice.get_mapped_range_mut();
+        bytes.fill(&mut view, 0)?;
 
         Ok(())
     }
@@ -183,7 +151,7 @@ impl Context {
                     span: span.clone(),
                     kind: ErrorKind::Check {
                         inner: Box::new(inner),
-                        buffer: global_buffer.id.to_string(),
+                        buffer: global_buffer.label.clone(),
                     },
                 })
             }
@@ -193,12 +161,31 @@ impl Context {
                 Err(Error {
                     span: span.clone(),
                     kind: ErrorKind::CheckFailed {
-                        buffer: global_buffer.id.to_string(),
+                        buffer: global_buffer.label.clone(),
                         offset,
                     },
                 })
             }
         }
+    }
+
+    fn create_buffer(
+        &mut self,
+        buffer_index: usize,
+        label: &str,
+        byte_length: usize,
+    ) {
+        // Newly created buffers should always be at the end of the array.
+        assert_eq!(buffer_index, self.global_buffers.len());
+        let size = align_mapped_at_creation_buffer_size(byte_length as wgpu::BufferAddress);
+        let desc = wgpu::BufferDescriptor {
+            label: Some(label),
+            size,
+            usage: self.summary.buffer_usage[buffer_index],
+            mapped_at_creation: true,
+        };
+        self.global_buffers
+            .push(Buffer::new(&self.device, &desc, label.to_string()));
     }
 
     /// Copy the global var buffer at `buffer_index` to the readback buffer.
@@ -235,7 +222,7 @@ impl Context {
             usage: Bu::COPY_DST | Bu::MAP_READ,
             mapped_at_creation: false,
         };
-        self.readback_buffer = Some(Buffer::new(&self.device, &desc, RunBufferId::Readback));
+        self.readback_buffer = Some(Buffer::new(&self.device, &desc, "wscript readback buffer".to_string()));
     }
 
     /// Ensure that we have a command encoder ready to use.
@@ -278,12 +265,12 @@ impl Drop for Context {
 }
 
 impl Buffer {
-    fn new(device: &wgpu::Device, descriptor: &wgpu::BufferDescriptor, id: RunBufferId) -> Buffer {
+    fn new(device: &wgpu::Device, descriptor: &wgpu::BufferDescriptor, label: String) -> Buffer {
         let wgpu = device.create_buffer(descriptor);
         Buffer {
             wgpu,
             mapped: descriptor.mapped_at_creation,
-            id,
+            label,
         }
     }
 
@@ -322,15 +309,6 @@ impl Buffer {
 
     pub fn unmap(&self) {
         self.wgpu.unmap();
-    }
-}
-
-impl fmt::Display for RunBufferId {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match *self {
-            RunBufferId::Readback => write!(f, "readback buffer"),
-            RunBufferId::Global(ref id) => write!(f, "{}", id.kind),
-        }
     }
 }
 
